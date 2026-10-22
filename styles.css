@@ -192,7 +192,8 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .expand-btn:hover { border-color: var(--lamp); }
 
 /* Open-plan office: ceiling lights, glass wall over the city, carpet tiles, cubicle rows, an aisle down the middle. */
-.scene { height: 500px; position: relative; overflow: hidden; isolation: isolate; background: #3a4262; }
+.scene { --z: 1; height: max(560px, calc(100vh - 250px)); position: relative; overflow: hidden; isolation: isolate; background: #3a4262; }
+.scene-world { position: absolute; left: 0; top: 0; width: calc(100% / var(--z)); height: calc(100% / var(--z)); transform: scale(var(--z)); transform-origin: 0 0; }
 .scene:before { /* wall */
   content: ''; position: absolute; left: 0; right: 0; top: 0; height: 43%; z-index: -2;
   background: linear-gradient(180deg, #2b3256, #3a4268);
@@ -244,7 +245,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
   display: grid; place-items: center; align-content: center; text-align: center;
   color: #1c2140; font-size: 13px; font-weight: 800;
 }
-.pinboard:before { content: ''; position: absolute; left: 8%; top: 12%; width: 14%; height: 24%; background: #ffd77a; box-shadow: 30px 6px #8fe3d6, 62px -2px #ffa8a0; transform: rotate(-3deg); }
+.pinboard:before { content: ''; position: absolute; left: 8%; top: 6%; width: 14%; height: 20%; background: #ffd77a; box-shadow: 30px 6px #8fe3d6, 62px -2px #ffa8a0; transform: rotate(-3deg); }
 .pinboard span { font: 12px var(--mono); color: #4a5280; margin-top: 4px; }
 .wall-clock { position: absolute; left: 49%; top: 4%; width: 34px; height: 34px; margin-left: -17px; border-radius: 50%; background: #f4f6ff; border: 3px solid #8b93b4; box-shadow: 0 3px 6px #00000050; }
 .wall-clock:before, .wall-clock:after { content: ''; position: absolute; left: 50%; width: 2px; margin-left: -1px; background: #1c2140; border-radius: 2px; transform-origin: 50% 100%; }
@@ -262,7 +263,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .watercooler { position: absolute; right: 2%; top: 38%; width: 26px; height: 54px; border-radius: 4px 4px 3px 3px; background: linear-gradient(90deg, #7e93c9, #b9c9ee, #6c80b8); box-shadow: 0 3px 6px #0000004d; }
 .watercooler:before { content: ''; position: absolute; top: -12px; left: 4px; width: 18px; height: 15px; border-radius: 5px 5px 2px 2px; background: #8fd6e0; border: 1px solid #6bb4c0; }
 .watercooler:after { content: ''; position: absolute; bottom: 15px; left: 4px; width: 18px; height: 2px; background: #5367a0; }
-.printer { position: absolute; right: 9%; top: 36%; width: 48px; height: 38px; border-radius: 4px; background: #a2abc9; box-shadow: inset 0 -5px #6f789c, 0 4px 6px #0000004d; display: grid; place-items: center; font-size: 22px; line-height: 1; }
+.printer { position: absolute; left: calc(2% + 2px); top: calc(36% - 30px); width: 48px; height: 38px; border-radius: 4px; background: #a2abc9; box-shadow: inset 0 -5px #6f789c, 0 4px 6px #0000004d; display: grid; place-items: center; font-size: 22px; line-height: 1; }
 .printer span { margin-top: -22px; }
 .pantry { position: absolute; right: 2%; bottom: 4%; width: 120px; height: 30px; border-radius: 4px; background: #8d96b8; box-shadow: inset 0 -6px #6f789c, 0 5px 8px #00000055; display: flex; justify-content: space-around; align-items: flex-start; z-index: 1; }
 .pantry span { font-size: 20px; margin-top: -16px; }
@@ -271,11 +272,11 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .plant-pot.p2 { right: 3%; top: 58%; }
 
 /* ---------- workstation: one cubicle ---------- */
-.workstation { position: absolute; width: 150px; height: 156px; z-index: 2; transform: translate(-50%, -50%); }
-.workstation.w1 { left: 27%; top: 41%; }
-.workstation.w3 { left: 73%; top: 41%; }
-.workstation.w2 { left: 27%; top: 79%; }
-.workstation.w4 { left: 73%; top: 79%; }
+.workstation { position: absolute; width: 150px; height: 156px; z-index: 2; transform: translate(-50%, -50%); scale: .9; --col: clamp(290px, 31%, 390px); }
+.workstation.w1 { left: calc(50% - var(--col)); top: 41%; }
+.workstation.w3 { left: calc(50% + var(--col)); top: 41%; }
+.workstation.w2 { left: calc(50% - var(--col)); top: 79%; }
+.workstation.w4 { left: calc(50% + var(--col)); top: 79%; }
 .workstation:after { /* partition panel behind the desk */
   content: ''; position: absolute; left: -4%; right: -4%; top: 26%; height: 48%; z-index: -1;
   background: linear-gradient(180deg, #4a5486, #3b4472); border-top: 5px solid #6a77b4; border-radius: 5px 5px 0 0;
@@ -309,10 +310,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .character { position: absolute; left: 50%; top: 15%; transform: translateX(-50%); width: 64px; height: 92px; z-index: 2; transition: top .55s, left .55s; }
 .character > span:not(.name-tag) { display: none; }
 .character:before { content: ''; position: absolute; inset: 0; z-index: 1; background: var(--sprite) 0 0 / 400% 100% no-repeat; image-rendering: pixelated; }
-.workstation .character:after { /* office chair back */
-  content: ''; position: absolute; left: -4px; top: 36px; width: 72px; height: 56px; z-index: 0;
-  background: #2a3060; border-top: 3px solid #4a5488; box-shadow: inset -6px 0 #20264a;
-}
+.chair { position: absolute; left: 50%; margin-left: -36px; top: 59px; width: 72px; height: 56px; z-index: 1; background: #2a3060; border-top: 4px solid #4a5488; box-shadow: inset -8px 0 #20264a; }
 .workstation[data-state="working"] .character:before { animation: typing .45s steps(1) infinite; }
 .character.walking:before { animation: walk .5s steps(1) infinite; }
 .name-tag {
@@ -400,23 +398,21 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .toast.show { transform: translate(-50%, 0); opacity: 1; }
 .mobile-menu { display: none; }
 
-/* ---------- lounge: sofa, coffee table, vending machine ---------- */
-.scene { --lx: 130px; }
+/* ---------- lounge: sofa, rug, vending machine (the centre lane stays clear for walking) ---------- */
 .lounge-rug {
-  position: absolute; left: 50%; margin-left: -170px; width: 340px; top: 62%; height: 36%;
+  position: absolute; left: 50%; margin-left: -218px; width: 214px; top: 64%; height: 33%;
   background: repeating-conic-gradient(#3e3566 0 25%, #463c74 0 50%) 0 0 / 16px 16px; border: 4px solid #5a4d92; box-shadow: 4px 4px 0 #05071a55;
 }
-.couch-back { position: absolute; z-index: 4; left: 50%; margin-left: -84px; width: 168px; top: calc(72% - 12px); height: 70px; background: #5a63a8; border-top: 4px solid #8a95dc; box-shadow: inset -8px 0 #444c8a, 0 4px 0 #05071a55; }
-.couch { position: absolute; z-index: 6; left: 50%; margin-left: -96px; width: 192px; top: calc(72% + 30px); height: 36px; background: linear-gradient(90deg, #4a5494 0 20px, transparent 20px calc(100% - 20px), #4a5494 calc(100% - 20px)), #7480c8; border-top: 4px solid #98a3e6; box-shadow: 0 4px 0 #05071a66; }
-.coffee-table { position: absolute; z-index: 2; left: 50%; margin-left: -40px; width: 80px; top: calc(72% + 78px); height: 22px; background: #8a6850; border-top: 4px solid #a98568; box-shadow: 0 4px 0 #624837, 4px 8px 0 #05071a55; }
-.coffee-table:before { content: ''; position: absolute; left: 10px; top: -28px; width: 27px; height: 24px; background: var(--px-coffee) center bottom / contain no-repeat; image-rendering: pixelated; }
-.coffee-table:after { content: ''; position: absolute; right: 12px; top: -22px; width: 18px; height: 18px; background: var(--px-note) center bottom / contain no-repeat; image-rendering: pixelated; }
-.vending { position: absolute; z-index: 3; left: calc(50% + 108px); top: calc(66% - 84px); width: 52px; height: 78px; background: #5b6fb5; border: 4px solid #2a3160; box-shadow: 4px 4px 0 #05071a55; }
+.lounge-rug:before { content: '휴게실'; position: absolute; left: 6px; bottom: 6px; z-index: 7; padding: 1px 8px; font: 14px var(--pixel); color: var(--text); background: var(--side); border: 2px solid var(--line); box-shadow: 3px 3px 0 #05071a; }
+.couch-back { position: absolute; z-index: 4; left: 50%; margin-left: -204px; width: 184px; top: calc(74% - 12px); height: 70px; background: #5a63a8; border-top: 4px solid #8a95dc; box-shadow: inset -8px 0 #444c8a, 0 4px 0 #05071a55; }
+.couch { position: absolute; z-index: 6; left: 50%; margin-left: -212px; width: 200px; top: calc(74% + 30px); height: 36px; background: linear-gradient(90deg, #4a5494 0 20px, transparent 20px calc(100% - 20px), #4a5494 calc(100% - 20px)), #7480c8; border-top: 4px solid #98a3e6; box-shadow: 0 4px 0 #05071a66; }
+.coffee-table { display: none; }
+.vending { position: absolute; z-index: 3; left: calc(50% + 70px); top: calc(74% - 88px); width: 52px; height: 78px; background: #5b6fb5; border: 4px solid #2a3160; box-shadow: 4px 4px 0 #05071a55; }
 .vending:before { content: ''; position: absolute; left: 4px; right: 4px; top: 4px; height: 38px; background: repeating-linear-gradient(90deg, #e25555 0 6px, #ffd166 6px 12px, #5fe3d0 12px 18px, #1d2140 18px 20px); }
 .vending:after { content: ''; position: absolute; left: 10px; right: 10px; bottom: 6px; height: 12px; background: #1d2140; }
-.lounge-rug:before { content: '휴게실'; position: absolute; left: -4px; top: -32px; padding: 1px 8px; font: 14px var(--pixel); color: var(--text); background: var(--side); border: 2px solid var(--line); box-shadow: 3px 3px 0 #05071a; }
-.workstation[data-state="break"] .status-chip { display: none; } /* the empty desk needs no label; the person is in the lounge */
+.workstation[data-state="break"] .status-chip { display: none; } /* empty desk: the person is in the lounge */
 .character.seated { z-index: 5; }
+.character.walking { z-index: 7; }
 
 /* ---------- roaming characters & visitors ---------- */
 .character.roamer { left: var(--walk-x); top: var(--walk-y); transform: translate(-50%, -50%); transition: none; z-index: 5; }
@@ -492,7 +488,6 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
     repeating-linear-gradient(90deg, #ffd98a 0 2px, #141a48 2px 8px);
 }
 .workstation:before { background: radial-gradient(ellipse, #5fe3d033 0 30%, #5fe3d01c 30% 62%, transparent 62%); }
-.workstation .character:after { box-shadow: inset -8px 0 #20264a; }
 .status-chip:after { display: none; }
 .status-chip { box-shadow: 3px 3px 0 #05071a; }
 .name-tag { box-shadow: 3px 3px 0 #05071a; }
@@ -528,9 +523,11 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 @media (min-width: 1450px) {
   .app { grid-template-columns: 272px minmax(0, 1fr); }
   .main { padding-left: 44px; padding-right: 44px; }
-  .scene { height: 620px; }
-  .workstation { scale: 1.2; }
-  .workstation.w2, .workstation.w4 { top: 81%; }
+}
+@media (max-width: 1400px) {
+  .app { grid-template-columns: 220px minmax(0, 1fr); }
+  .main { padding: 0 20px 28px; }
+  .hero { padding: 16px 0 14px; }
 }
 @media (max-width: 1100px) {
   .app { grid-template-columns: 224px minmax(0, 1fr); }
@@ -538,11 +535,9 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
   .stat-card { padding: 14px 12px; gap: 10px; }
   .stat-icon { width: 36px; height: 36px; }
   .stat-copy em { display: none; }
-  .scene { height: 450px; }
-  .workstation { scale: .92; }
 }
 @media (max-width: 800px) {
-  .scene { --lx: 110px; }
+  .scene { height: 460px; }
   .app { display: block; height: auto; }
   .main { overflow: visible; padding: 0 18px 28px; }
   .sidebar { position: fixed; left: 0; top: 0; bottom: 0; width: 256px; transform: translateX(-102%); transition: transform .22s; box-shadow: 10px 0 40px #00000080; }
@@ -553,14 +548,10 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
   .stat-card:nth-child(3) { border-left: 0; }
   .stat-card:nth-child(n+3) { border-top: 1px solid var(--line); }
   .hero h1 { font-size: 25px; }
-  .scene { height: 400px; }
-  .workstation { scale: .84; }
   .below-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) {
-  .scene { --lx: 78px; }
-  .vending { display: none; }
-  .lounge-rug { width: 220px; margin-left: -110px; }
+  .scene { height: 420px; }
   .main { padding: 0 12px 22px; }
   .topbar { height: 56px; }
   .crumb, .crumb strong { font-size: 13px; }
@@ -579,8 +570,6 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
   .office-head { padding: 0 12px; height: 54px; }
   .office-title h2 { font-size: 15px; }
   .office-title .subtitle { display: none; }
-  .scene { height: 360px; }
-  .workstation { scale: .62; }
   .window { width: 30%; }
   .pinboard { left: 38%; width: 24%; font-size: 12px; }
   .pinboard span, .printer, .wall-clock, .bookshelf { display: none; }
