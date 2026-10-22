@@ -268,7 +268,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .pantry span { font-size: 20px; margin-top: -16px; }
 .plant-pot { position: absolute; z-index: 1; font-size: 32px; filter: drop-shadow(0 4px 3px #00000066); }
 .plant-pot.p1 { left: 3%; top: 56%; }
-.plant-pot.p2 { right: 3%; top: 58%; font-size: 38px; }
+.plant-pot.p2 { right: 3%; top: 58%; }
 
 /* ---------- workstation: one cubicle ---------- */
 .workstation { position: absolute; width: 150px; height: 156px; z-index: 2; transform: translate(-50%, -50%); }
@@ -287,26 +287,26 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 }
 .workstation[data-state="working"]:before { opacity: 1; }
 
-.desk { position: absolute; left: 50%; top: 61%; transform: translateX(-50%); width: 120px; height: 43px; background: #bcc3df; border-radius: 4px 4px 3px 3px; box-shadow: 0 4px 0 #8089ad, 0 10px 12px #00000055; }
+.desk { /* lit top surface + darker front panel */
+  position: absolute; left: 50%; top: 61%; transform: translateX(-50%); width: 124px; height: 43px; z-index: 3;
+  background: linear-gradient(180deg, #dfe3f4 0 9px, #bcc3df 9px); border-radius: 4px 4px 3px 3px;
+  box-shadow: 0 4px 0 #8089ad, 0 10px 12px #00000066;
+}
 .desk:before, .desk:after { content: ''; position: absolute; top: 40px; width: 6px; height: 28px; background: #565d7d; border-radius: 0 0 2px 2px; }
 .desk:before { left: 11px; }
 .desk:after { right: 11px; }
-.desk-top { /* monitor */
-  position: absolute; top: 8px; left: 15px; width: 52px; height: 31px;
-  background: #0b0f24; border: 3px solid #2a3158; border-radius: 4px; box-shadow: inset 0 0 0 2px #1a2044;
+.desk-top { /* laptop: we see the back of the lid, its logo lights up while working */
+  position: absolute; top: -9px; left: 38px; width: 48px; height: 17px;
+  background: #2e355c; border-radius: 4px 4px 0 0; box-shadow: inset 0 2px #4a5488;
 }
-.desk-top:after { content: ''; position: absolute; bottom: -7px; left: 17px; width: 12px; height: 5px; background: #2a3158; }
-.workstation[data-state="working"] .desk-top {
-  background: repeating-linear-gradient(0deg, #5fe3d033 0 2px, transparent 2px 5px), #0f3a3f;
-  box-shadow: inset 0 0 8px #5fe3d0aa, 0 0 16px #5fe3d077;
-}
-.keyboard { position: absolute; left: 77px; top: 25px; width: 25px; height: 11px; border-radius: 2px; background: repeating-linear-gradient(90deg, #3a4262 0 3px, #20264a 3px 4px); box-shadow: 0 2px 2px #00000055; }
-.mug { position: absolute; right: 3px; top: 11px; font-size: 16px; }
-.task-note { position: absolute; left: 4px; top: 13px; font-size: 14px; }
+.desk-top:before { content: ''; position: absolute; left: 50%; top: 5px; width: 6px; height: 6px; margin-left: -3px; border-radius: 50%; background: #4a5488; }
+.desk-top:after { content: ''; position: absolute; bottom: -3px; left: -4px; width: 56px; height: 3px; background: #1d2244; border-radius: 0 0 3px 3px; }
+.workstation[data-state="working"] .desk-top:before { background: var(--screen); box-shadow: 0 0 10px var(--screen); }
+.keyboard { display: none; }
+.mug { position: absolute; left: 8px; top: -8px; font-size: 16px; }
+.task-note { position: absolute; right: 8px; top: -8px; font-size: 14px; }
 
-/* ---------- characters: 8-bit office workers ----------
-   Sprites live in sprites.css (generated). Each sheet holds two frames: 0% and 100% background position. */
-.character { position: absolute; left: 50%; top: 12%; transform: translateX(-50%); width: 64px; height: 92px; z-index: 2; transition: top .55s, left .55s; }
+.character { position: absolute; left: 50%; top: 15%; transform: translateX(-50%); width: 64px; height: 92px; z-index: 2; transition: top .55s, left .55s; }
 .character > span:not(.name-tag) { display: none; }
 .character:before { content: ''; position: absolute; inset: 0; z-index: 1; background: var(--sprite) 0 0 / 200% 100% no-repeat; image-rendering: pixelated; }
 .workstation .character:after { /* office chair back */
@@ -415,6 +415,96 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 @keyframes visitorIn { from { opacity: 0; translate: 14px 0; } to { opacity: 1; translate: 0 0; } }
 
 /* ---------- sizes ---------- */
+/* ================= 8-bit pass =================
+   Square corners, hard 1-step shadows, banded gradients, a pixel font for labels, sprite props instead of emoji. */
+@font-face { font-family: 'Galmuri14'; src: url('./fonts/Galmuri14.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+:root { --pixel: 'Galmuri14', 'Malgun Gothic', monospace; --line: #3a4272; --shadow: 6px 6px 0 #05071a; }
+*, *:before, *:after { border-radius: 0 !important; }
+.brand-name, .hero h1, .eyebrow, .office-title h2, .panel-head h3, .stat-copy strong, .status-chip, .name-tag, .nav-item, .section-row,
+.nav-label, .workspace-label, .workspace-info strong, .agent-meta strong, .live-pill, .room-badge, .queue-tag, .send-btn, .ghost-btn, .expand-btn,
+.primary-btn, .toast, .nav-item .count, .date-button, .usage-head, .profile strong, .mood-label, .panel-head a, .panel-head button, .crumb, .crumb strong {
+  font-family: var(--pixel); font-weight: 400; letter-spacing: 0; font-synthesis: none;
+}
+.brand-name { font-size: 28px; }
+.hero h1 { font-size: 28px; }
+.eyebrow { font-size: 14px; }
+.stat-copy strong { font-size: 28px; }
+.mood-label { font-size: 14px !important; }
+.office-title h2, .panel-head h3, .nav-item, .section-row, .nav-label, .workspace-label, .workspace-info strong, .agent-meta strong, .live-pill, .room-badge,
+.queue-tag, .send-btn, .ghost-btn, .expand-btn, .primary-btn, .toast, .nav-item .count, .date-button, .usage-head, .profile strong, .status-chip, .name-tag,
+.panel-head a, .panel-head button, .crumb, .crumb strong { font-size: 14px; }
+.name-tag { letter-spacing: 0; padding: 1px 6px; }
+
+/* frames: 2px borders and one hard shadow step */
+.panel, .summary, .office-card, .workspace-select, .usage-card, .composer, .live-pill, .icon-btn, .ghost-btn, .expand-btn, .room-badge, .date-button, .toast {
+  border-width: 2px; box-shadow: 4px 4px 0 #05071a;
+}
+.office-card { box-shadow: var(--shadow); }
+.nav-item.active { box-shadow: inset 4px 0 var(--lamp); }
+.usage-track span { background: var(--screen); }
+.usage-track { height: 10px; border: 2px solid var(--line); }
+.live-dot { box-shadow: none; }
+.mini-avatar.online:after { box-shadow: none; }
+::-webkit-scrollbar-thumb { border-radius: 0; }
+
+/* sprite icons in the UI */
+.brand-mark.px-house { width: 36px; height: 33px; font-size: 0; box-shadow: none; background-color: transparent; }
+.workspace-icon.px-sprout { font-size: 0; width: 34px; height: 34px; background-size: 24px 24px; background-position: center; background-color: var(--panel-2); }
+.mini-avatar[data-look], .profile-pic[data-look] {
+  font-size: 0; width: 32px; height: 32px; image-rendering: pixelated;
+  background: var(--sprite) 0 0 / 64px 46px no-repeat #242a4a !important;
+}
+
+/* scene: banded wall and sky, pixel props, hard shadows */
+.scene:before { background: linear-gradient(180deg, #2b3256 0 34%, #303860 34% 67%, #363e68 67%); }
+.window {
+  background:
+    linear-gradient(#fff3cf, #fff3cf) 84% 20% / 12px 12px no-repeat,
+    linear-gradient(#fff, #fff) 12% 22% / 2px 2px no-repeat,
+    linear-gradient(#fff, #fff) 38% 12% / 2px 2px no-repeat,
+    linear-gradient(#fff, #fff) 58% 30% / 2px 2px no-repeat,
+    linear-gradient(#fff, #fff) 72% 14% / 2px 2px no-repeat,
+    linear-gradient(180deg, #0c1030 0 20%, #121a48 20% 40%, #1b2760 40% 60%, #23317a 60% 80%, #2c3b80 80%);
+}
+.window:after {
+  background:
+    repeating-linear-gradient(0deg, #141a48 0 8px, transparent 8px 10px),
+    repeating-linear-gradient(90deg, #ffd98a 0 2px, #141a48 2px 8px);
+}
+.workstation:before { background: radial-gradient(ellipse, #5fe3d033 0 30%, #5fe3d01c 30% 62%, transparent 62%); }
+.workstation .character:after { box-shadow: inset -8px 0 #20264a; }
+.status-chip:after { display: none; }
+.status-chip { box-shadow: 3px 3px 0 #05071a; }
+.name-tag { box-shadow: 3px 3px 0 #05071a; }
+.desk { box-shadow: 0 4px 0 #8089ad, 0 8px 0 #0000004d; }
+.pinboard, .printer, .pantry, .bookshelf, .watercooler, .wall-clock { box-shadow: 4px 4px 0 #05071a55; }
+
+.mug, .task-note, .pantry span, .plant-pot, .printer span, .shelf-plant {
+  font-size: 0; background-repeat: no-repeat; background-position: center bottom; background-size: contain; image-rendering: pixelated;
+}
+.mug { top: -27px; left: 6px; width: 30px; height: 30px; }
+.task-note { top: -27px; right: 6px; width: 30px; height: 30px; }
+.w1 .mug { background-image: var(--px-coffee); }
+.w2 .mug { background-image: var(--px-tea); }
+.w3 .mug { background-image: var(--px-boba); }
+.w4 .mug { background-image: var(--px-sprout); }
+.w1 .task-note { background-image: var(--px-note); }
+.w2 .task-note { background-image: var(--px-books); }
+.w3 .task-note { background-image: var(--px-bulb); }
+.w4 .task-note { background-image: var(--px-check); }
+.plant-pot { width: 42px; height: 60px; filter: none; }
+.plant-pot.p1 { background-image: var(--px-plant); }
+.plant-pot.p2 { background-image: var(--px-fern); width: 42px; font-size: 0; }
+.pantry span { width: 27px; height: 27px; margin-top: -24px; }
+.pantry span:nth-child(1) { background-image: var(--px-coffee); }
+.pantry span:nth-child(2) { background-image: var(--px-can); width: 18px; }
+.printer { font-size: 0; height: 28px; background: #aab3d0; box-shadow: inset 0 -6px #6f789c, 4px 4px 0 #05071a55; }
+.printer:before { content: ''; position: absolute; left: 12px; top: -12px; width: 24px; height: 12px; background: #f4f6ff; border: 2px solid var(--ink-on-color); border-bottom: 0; }
+.printer:after { content: ''; position: absolute; left: 8px; right: 8px; top: 8px; height: 4px; background: #241c33; }
+.visitor span[data-look] { width: 48px; height: 69px; font-size: 0; background: var(--sprite) 0 0 / 200% 100% no-repeat; image-rendering: pixelated; filter: none; }
+.visitor b { box-shadow: 3px 3px 0 #05071a; }
+.speech { font-family: var(--pixel); }
+
 @media (min-width: 1450px) {
   .app { grid-template-columns: 272px minmax(0, 1fr); }
   .main { padding-left: 44px; padding-right: 44px; }
@@ -471,8 +561,8 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
   .pinboard { left: 38%; width: 24%; font-size: 12px; }
   .pinboard span, .printer, .wall-clock, .bookshelf { display: none; }
   .watercooler { right: 1%; transform: scale(.75); transform-origin: right top; }
-  .plant-pot.p1 { left: 1%; font-size: 24px; }
-  .plant-pot.p2 { right: 1%; font-size: 30px; }
+  .plant-pot.p1 { left: 1%; }
+  .plant-pot.p2 { right: 1%; }
   .pantry { transform: scale(.7); transform-origin: right bottom; }
   .scene-footer { padding: 0 12px; font-size: 12px; }
   .keys { display: none; }

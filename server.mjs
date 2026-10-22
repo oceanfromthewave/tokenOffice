@@ -211,6 +211,18 @@ const server = createServer(async (request, response) => {
     '/sprites.css': ['sprites.css', 'text/css'],
     '/app.js': ['app.js', 'text/javascript'],
   };
+  if (request.method === 'GET' && url.pathname === '/fonts/Galmuri14.woff2') {
+    try {
+      const font = await readFile(join(root, 'fonts', 'Galmuri14.woff2'));
+      response.writeHead(200, { 'Content-Type': 'font/woff2', 'Cache-Control': 'max-age=86400', 'X-Content-Type-Options': 'nosniff' });
+      response.end(font);
+    } catch {
+      response.writeHead(404);
+      response.end('Not found');
+    }
+    return;
+  }
+
   if (request.method === 'GET' && staticFiles[url.pathname]) {
     const [file, type] = staticFiles[url.pathname];
     try {
