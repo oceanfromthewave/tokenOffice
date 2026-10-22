@@ -1,7 +1,7 @@
 // Who is where, and how they get around. No drawing here, so it runs (and is tested) without a browser.
 import type { Facing, Look } from '../../shared/pixels.ts';
 import type { AgentState } from '../../shared/types.ts';
-import { BODY_HALF, CELL, cellOf, DESKS, DOOR, LOUNGE, pointOf, SOFA_BAND, walkGrid, type Point, type Spot } from './layout.ts';
+import { BODY_HALF, CELL, cellOf, DESKS, DOOR, LOUNGE, OVERFLOW, pointOf, SOFA_BAND, walkGrid, type Point, type Spot } from './layout.ts';
 import { corners, findPath, type WalkGrid } from './path.ts';
 
 export interface OfficeAgent {
@@ -22,6 +22,7 @@ export interface Walker {
   at: Spot | null; // where they are settled, if anywhere
   facing: Facing;
   desk: number; // -1 when every desk is taken
+  spare: number; // overflow spot while waiting for a desk, else -1
   leaving: boolean;
   t: number;
   waited: number; // seconds spent letting someone pass
@@ -32,6 +33,8 @@ const MAX_WAIT = 0.8;
 
 export class Crowd {
   readonly walkers = new Map<string, Walker>();
+  /** Finished subagents that already walked out; the server keeps reporting them for a while, so don't bring them back. */
+  private departed = new Set<string>();
   /** When true, people appear at their destination instead of walking (reduced motion). */
   instant: () => boolean;
 
@@ -42,17 +45,29 @@ export class Crowd {
   /** Syncs with the current agents. `instant` places everyone without walking (first paint). */
   setAgents(agents: OfficeAgent[], instant = false) {
     const ids = new Set(agents.map(a => a.id));
+    const finished = (a: OfficeAgent) => a.isSubagent && a.state === 'done';
+    for (const id of this.departed) if (!agents.some(a => a.id === id && finished(a))) this.departed.delete(id);
     for (const w of this.walkers.values()) {
       if (!ids.has(w.agent.id) && !w.leaving) { w.leaving = true; this.send(w, null, instant); }
     }
-    const taken = new Set([...this.walkers.values()].map(w => w.desk));
+    // a desk (or overflow spot) is free once nobody who is staying holds it
+    const staying = [...this.walkers.values()].filter(w => !w.leaving);
+    const desks = new Set(staying.map(w => w.desk));
+    const spares = new Set(staying.map(w => w.spare));
+    const free = (spots: Spot[], taken: Set<number>) => spots.findIndex((_, i) => !taken.has(i));
     for (const agent of agents) {
       let w = this.walkers.get(agent.id);
+      if (!w && (this.departed.has(agent.id) || finished(agent))) { this.departed.add(agent.id); continue; } // already gone, or done before we ever saw it
       if (!w) {
-        const desk = DESKS.findIndex((_, i) => !taken.has(i));
-        taken.add(desk);
-        w = { agent, x: DOOR.x, y: DOOR.y, route: [], target: null, at: null, facing: 'down', desk, leaving: false, t: Math.random() * 10, waited: 0 };
+        const desk = free(DESKS, desks);
+        const spare = desk < 0 ? free(OVERFLOW, spares) : -1;
+        desks.add(desk); spares.add(spare);
+        w = { agent, x: DOOR.x, y: DOOR.y, route: [], target: null, at: null, facing: 'down', desk, spare, leaving: false, t: Math.random() * 10, waited: 0 };
         this.walkers.set(agent.id, w);
+      } else if (w.desk < 0 && !w.leaving) {
+        // someone waiting in the aisle moves up to a desk as soon as one frees
+        const desk = free(DESKS, desks);
+        if (desk >= 0) { desks.add(desk); spares.delete(w.spare); w.desk = desk; w.spare = -1; }
       }
       w.agent = agent;
       if (w.leaving) continue;
@@ -91,7 +106,7 @@ export class Crowd {
   private goalFor(w: Walker): Spot | null {
     const { state, isSubagent } = w.agent;
     if (isSubagent && state === 'done') return null; // finished helpers head out
-    if (w.desk < 0) return LOUNGE[LOUNGE.length - 1]!;
+    if (w.desk < 0) return OVERFLOW[w.spare] ?? OVERFLOW[OVERFLOW.length - 1]!; // ponytail: >12 agents share the last spot
     const atDesk = state === 'working' || state === 'waiting' || state === 'error';
     return atDesk ? DESKS[w.desk]! : LOUNGE[w.desk]!;
   }
@@ -122,7 +137,12 @@ export class Crowd {
 
   private arrive(w: Walker) {
     w.facing = 'down';
-    if (w.leaving) { this.walkers.delete(w.agent.id); return; }
+    // reaching the door means leaving: either the agent is gone, or it's a finished subagent heading out
+    if (w.leaving || !w.target) {
+      this.walkers.delete(w.agent.id);
+      if (!w.leaving) this.departed.add(w.agent.id);
+      return;
+    }
     w.at = w.target;
   }
 

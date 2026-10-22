@@ -1,6 +1,6 @@
 {
   "name": "token-office",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "main": "out/main/main.js",
@@ -21,6 +21,7 @@
     "productName": "tokenOffice",
     "files": [
       "out/**",
+      "hook/token-office.cjs",
       "build/icon.png",
       "package.json"
     ],

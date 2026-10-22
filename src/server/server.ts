@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { connectHooks, disconnectHooks, setupStatus } from './hooksetup.ts';
 import { OfficeState } from './state.ts';
 
 export const HOST = '127.0.0.1';
@@ -75,6 +76,15 @@ export function startServer(port = Number(process.env.TOKEN_OFFICE_PORT) || DEFA
         return ok ? json(response, 202, { accepted: true }) : json(response, 400, { error: 'Invalid Claude Code hook event' });
       } catch {
         return json(response, 400, { error: 'Invalid or oversized request' });
+      }
+    }
+    // Claude Code connection: read, add or remove our hook in ~/.claude/settings.json
+    if (request.method === 'GET' && pathname === '/api/setup') return json(response, 200, await setupStatus());
+    if (request.method === 'POST' && (pathname === '/api/setup/connect' || pathname === '/api/setup/disconnect')) {
+      try {
+        return json(response, 200, await (pathname.endsWith('/connect') ? connectHooks() : disconnectHooks()));
+      } catch (error) {
+        return json(response, 500, { error: (error as Error).message });
       }
     }
     if (request.method === 'GET') return serveStatic(pathname, response);

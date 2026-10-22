@@ -1,6 +1,7 @@
 const path = require('node:path');
 
-const MAX_INPUT = 24_000;
+// Tool inputs (e.g. a Write of a big file) can be large; only a few small fields are forwarded, but the JSON must parse.
+const MAX_INPUT = 8_000_000;
 const chunks = [];
 let size = 0;
 

@@ -2,6 +2,7 @@
 import { app, BrowserWindow, Menu, Tray, nativeImage, type MenuItemConstructorOptions } from 'electron';
 import updater from 'electron-updater';
 import { join } from 'node:path';
+import { connectHooks, disconnectHooks, refreshHookScript, setupStatus } from '../server/hooksetup.ts';
 import { DEFAULT_PORT, HOST, startServer } from '../server/server.ts';
 
 const { autoUpdater } = updater; // CommonJS package: take the named export off the default
@@ -11,6 +12,7 @@ let win: BrowserWindow | undefined;
 let tray: Tray | undefined;
 let quitting = false;
 let updateReady = ''; // version waiting to be installed
+let hooked = false; // our hook is registered in ~/.claude/settings.json
 
 if (!app.requestSingleInstanceLock()) app.quit();
 app.on('second-instance', () => { win?.show(); win?.focus(); });
@@ -23,6 +25,7 @@ function notify(title: string, content: string) {
 function buildMenu() {
   const items: MenuItemConstructorOptions[] = [
     { label: '열기', click: () => win?.show() },
+    { label: 'Claude Code 연결', type: 'checkbox', checked: hooked, click: () => void toggleHooks() },
     {
       label: '윈도우 시작 시 자동 실행', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin,
       click: item => app.setLoginItemSettings({ openAtLogin: item.checked }),
@@ -36,6 +39,19 @@ function buildMenu() {
     { label: '종료', click: () => { quitting = true; app.quit(); } },
   ];
   tray?.setContextMenu(Menu.buildFromTemplate(items));
+}
+
+async function toggleHooks() {
+  try {
+    const status = await (hooked ? disconnectHooks() : connectHooks());
+    hooked = status.connected;
+    notify('tokenOffice', hooked
+      ? (status.node ? 'Claude Code와 연결했어요. 새로 여는 세션부터 사무실에 나타나요.' : '연결했지만 Node.js가 없어서 훅이 실행되지 않아요. nodejs.org에서 설치해 주세요.')
+      : 'Claude Code 연결을 해제했어요.');
+  } catch (error) {
+    notify('연결 설정 실패', (error as Error).message);
+  }
+  buildMenu();
 }
 
 /** Checks GitHub Releases. Downloads happen in the background; the new version installs on the next restart. */
@@ -80,10 +96,14 @@ app.whenReady().then(async () => {
   win.loadURL(`http://${HOST}:${port}/`);
   // Closing the window keeps the app (and the hook receiver) alive in the tray.
   win.on('close', event => { if (!quitting) { event.preventDefault(); win?.hide(); } });
+  // the dashboard can also connect/disconnect, so refresh the tray's checkbox whenever the window comes back
+  win.on('focus', () => void setupStatus().then(status => { hooked = status.connected; buildMenu(); }));
 
   tray = new Tray(nativeImage.createFromPath(icon).resize({ width: 16 }));
   tray.setToolTip('tokenOffice');
   tray.on('click', () => win?.show());
+  hooked = (await setupStatus()).connected;
+  void refreshHookScript();
   buildMenu();
   setUpUpdates();
 });

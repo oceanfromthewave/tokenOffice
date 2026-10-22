@@ -17,7 +17,9 @@ From 0.2.1 the app updates itself. It checks GitHub Releases at start and every 
 
 ## Connect Claude Code
 
-Copy `hook/token-office.cjs` to `~/.claude/hooks/` and register it in `~/.claude/settings.json` for these events: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest, Notification, SubagentStart, SubagentStop, TeammateIdle, Stop, StopFailure, SessionEnd.
+Press "Claude Code 연결하기" in the app, or tick "Claude Code 연결" in the tray menu. The app copies its hook to `~/.claude/hooks/token-office.cjs` and adds one entry per event to `~/.claude/settings.json`. Your other settings and hooks are left as they are, and the previous file is kept as `settings.json.tokenoffice-backup`. "연결 해제" removes exactly those entries again. The hook runs with Node.js, so `node` must be on your PATH. The app warns you if it isn't. While connected, the app refreshes its copy of the hook script on every start, so fixes to the hook arrive with app updates.
+
+To set it up by hand instead, copy `hook/token-office.cjs` to `~/.claude/hooks/` and register it in `~/.claude/settings.json` for these events: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PermissionRequest, Notification, SubagentStart, SubagentStop, TeammateIdle, Stop, StopFailure, SessionEnd.
 
 Each entry looks like:
 

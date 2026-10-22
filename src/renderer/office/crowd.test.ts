@@ -44,6 +44,21 @@ test('a helper robot walks in from the door, works, and leaves when it is remove
   assert.equal(crowd.walkers.size, 0);
 });
 
+test('a finished subagent walks out the door and does not hang around while the server still lists it', () => {
+  const crowd = new Crowd();
+  const helper: OfficeAgent = { id: 'bot', name: 'Explore', look: 'bot', state: 'working', tool: 'Grep', isSubagent: true };
+  crowd.setAgents([helper]);
+  run(crowd, 20);
+  const done = { ...helper, state: 'done' as const };
+  crowd.setAgents([done]);
+  run(crowd, 20);
+  assert.equal(crowd.walkers.size, 0, 'gone once it reached the door');
+  crowd.setAgents([done]);
+  assert.equal(crowd.walkers.size, 0, 'not brought back by the next poll');
+  crowd.setAgents([{ ...helper, id: 'late', state: 'done' }]);
+  assert.equal(crowd.walkers.size, 0, 'one that finished before we ever saw it never appears');
+});
+
 test('nobody ends up standing on top of anybody else', () => {
   const crowd = new Crowd();
   const six = Array.from({ length: 6 }, (_, i): OfficeAgent => ({ id: `a${i}`, name: `a${i}`, look: 'momo', state: 'working', tool: '', isSubagent: false }));
@@ -55,4 +70,30 @@ test('nobody ends up standing on top of anybody else', () => {
   for (const a of settled) for (const b of settled) {
     if (a !== b) assert.ok(Math.abs(a.x - b.x) >= 14 || Math.abs(a.y - b.y) >= 20, `${a.agent.id} and ${b.agent.id} overlap`);
   }
+});
+
+const many = (n: number) => Array.from({ length: n }, (_, i): OfficeAgent => ({ id: `w${i}`, name: `w${i}`, look: 'tori', state: 'working', tool: 'Edit', isSubagent: false }));
+
+test('ten people: the extra four wait in the aisle, nobody overlaps or clips furniture', () => {
+  const crowd = new Crowd();
+  crowd.setAgents(many(10));
+  run(crowd, 40);
+  const all = [...crowd.walkers.values()];
+  assert.ok(all.every(w => w.at && !w.route.length), 'everyone arrived');
+  assert.equal(all.filter(w => w.at?.kind === 'stand').length, 4);
+  for (const a of all) for (const b of all) {
+    if (a !== b) assert.ok(!(Math.abs(a.x - b.x) < 14 && Math.abs(a.y - b.y) < 20), `${a.agent.id} and ${b.agent.id} overlap`);
+  }
+});
+
+test('when desk holders leave, the people waiting take their desks', () => {
+  const crowd = new Crowd();
+  const eight = many(8);
+  crowd.setAgents(eight, true);
+  const waiting = eight.slice(6).map(a => crowd.walkers.get(a.id)!);
+  assert.ok(waiting.every(w => w.desk === -1 && w.at?.kind === 'stand'));
+  crowd.setAgents(eight.slice(2)); // w0 and w1 go home
+  run(crowd, 30);
+  assert.deepEqual(waiting.map(w => w.at), [DESKS[0], DESKS[1]]);
+  assert.ok(waiting.every(w => w.spare === -1));
 });

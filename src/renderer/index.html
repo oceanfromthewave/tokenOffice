@@ -20,6 +20,11 @@
       <div class="section-row"><span>에이전트</span><span class="count" id="agent-count">0</span></div>
       <div class="agent-list" id="agent-list"></div>
       <div class="sidebar-bottom">
+        <div class="usage-card setup-card">
+          <div class="usage-head"><span>Claude Code 연결</span><strong id="setup-state">확인 중</strong></div>
+          <div class="usage-note" id="setup-note"></div>
+          <button type="button" class="ghost-btn setup-btn" id="setup-button" hidden>연결하기</button>
+        </div>
         <div class="usage-card">
           <div class="usage-head"><span>받은 훅 이벤트</span><strong id="event-count">0</strong></div>
           <div class="usage-note">프롬프트, 도구 입력, 파일 내용은 받지도 저장하지도 않아요.</div>
@@ -41,7 +46,7 @@
           <h1 id="greeting">안녕하세요</h1>
           <p id="hero-text">지금은 데모 화면이에요. Claude Code 세션을 시작하면 실제 상태로 바뀌어요.</p>
         </div>
-        <div class="hero-controls"><span class="date-button" id="current-time"></span></div>
+        <div class="hero-controls"><button type="button" class="send-btn" id="hero-connect" hidden>Claude Code 연결하기</button><span class="date-button" id="current-time"></span></div>
       </section>
 
       <section class="summary" aria-label="요약">

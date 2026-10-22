@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cellOf, DESKS, DOOR, LOUNGE, walkGrid } from './layout.ts';
+import { cellOf, DESKS, DOOR, LOUNGE, OVERFLOW, walkGrid } from './layout.ts';
 import { findPath } from './path.ts';
 
 const allowed = (...spots: { band: number }[]) => new Set(spots.map(s => s.band).filter(b => b >= 0));
 
 test('every desk and lounge spot can be reached from the door', () => {
-  for (const spot of [...DESKS, ...LOUNGE]) {
+  for (const spot of [...DESKS, ...LOUNGE, ...OVERFLOW]) {
     const path = findPath(walkGrid(allowed(spot)), cellOf(DOOR), cellOf(spot));
     assert.ok(path, `no route from the door to ${spot.kind} at ${spot.x},${spot.y}`);
   }

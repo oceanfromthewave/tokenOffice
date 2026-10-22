@@ -29,6 +29,8 @@ export const LOUNGE: Spot[] = [
   { x: 229, y: 87, kind: 'stand', band: -1 },
   { x: 202, y: 89, kind: 'stand', band: -1 },
 ];
+/** Where people wait when every desk is taken: the bottom edge of the floor, far enough below the front desks not to cover anyone seated. */
+export const OVERFLOW: Spot[] = [36, 56, 76, 96, 116, 136].map(x => ({ x, y: 136, kind: 'stand' as const, band: -1 }));
 
 // Floor footprints: the strip each piece of furniture stands on. Walkers can't enter them.
 // Things standing against the wall reach back to it, so nobody squeezes behind them.

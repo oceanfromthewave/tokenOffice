@@ -135,25 +135,50 @@ const iconFor = (text: string, tool: string) => (tool ? '⌘' : text.includes('�
 // ---------------- live mode ----------------
 const looks = new Map<string, Look>();
 let nextLook = 0;
+// New sessions get a friendly random name instead of the folder name; it sticks for the life of the session.
+const PERSON_NAMES = ['하루', '보리', '단비', '누리', '미르', '솔이', '나래', '다온', '가람', '소담', '라온', '별하', '지오', '해솔', '윤슬', '도담'];
+const ROBOT_NAMES = ['삐삐', '뚝딱', '볼트', '너트', '깡통', '반짝', '찌릿', '또롱', '덜컹', '빙글'];
+const AUTO_NAME_STORE = 'tokenOffice.autoNames';
+const autoNames = new Map<string, string>(((): [string, string][] => {
+  try { return JSON.parse(localStorage.getItem(AUTO_NAME_STORE) ?? '[]') as [string, string][]; } catch { return []; }
+})());
+
+function autoName(record: AgentRecord, taken: Set<string>): string {
+  let name = autoNames.get(record.id);
+  if (!name) {
+    const pool = record.isSubagent ? ROBOT_NAMES : PERSON_NAMES;
+    const free = pool.filter(n => !taken.has(n));
+    name = free.length ? free[Math.floor(Math.random() * free.length)]! : `${pick(pool)} ${taken.size + 1}`;
+    autoNames.set(record.id, name);
+    // remember the last few sessions only
+    try { localStorage.setItem(AUTO_NAME_STORE, JSON.stringify([...autoNames].slice(-60))); } catch { /* names last until reload */ }
+  }
+  return name;
+}
+
 function fromRecords(records: AgentRecord[]): ViewAgent[] {
+  const taken = new Set(records.map(r => autoNames.get(r.id)).filter((n): n is string => Boolean(n)));
   const seen = new Map<string, number>();
   return records.map(r => {
     if (!looks.has(r.id)) looks.set(r.id, r.isSubagent ? 'bot' : LOOKS[nextLook++ % LOOKS.length]!);
     const key = r.isSubagent ? `sub:${r.agentType || r.name}` : `main:${r.project}`;
     const profile = profiles[key] ?? {};
-    const name = profile.name || r.name;
+    const generated = autoName(r, taken);
+    taken.add(generated);
+    const name = profile.name || generated;
     const count = (seen.get(name) ?? 0) + 1;
     seen.set(name, count);
     return {
       id: r.id,
       key,
-      baseName: r.name,
+      baseName: generated,
       name: count > 1 ? `${name} ${count}` : name,
       look: profile.look ?? looks.get(r.id)!,
       state: r.state,
       tool: r.tool,
       isSubagent: r.isSubagent,
-      role: [r.isSubagent ? r.project : '', r.tool || (r.isSubagent ? '서브에이전트' : 'Claude Code')].filter(Boolean).join(' · '),
+      // the folder (or the subagent's type) still shows under the name
+      role: [r.isSubagent ? r.agentType || '서브에이전트' : r.project, r.tool].filter(Boolean).join(' · '),
     };
   });
 }
@@ -166,6 +191,7 @@ function applySnapshot(snapshot: Snapshot) {
   agents = fromRecords(snapshot.agents);
   $('#live-text').textContent = 'Claude Code 연결됨';
   $('#live-pill').classList.add('connected');
+  $('#hero-connect').hidden = true;
   $('#hero-text').textContent = agents.length ? 'Claude Code 세션의 실제 상태를 보여주고 있어요.' : 'Claude Code 세션이 끝났어요. 새 세션을 기다리고 있어요.';
   render(snapshot.metrics, first);
   renderActivity(snapshot.activity.map((a: ActivityItem) => ({ agent: a.agent, text: a.text, detail: [a.project, a.tool].filter(Boolean).join(' · '), at: a.at, icon: iconFor(a.text, a.tool) })));
@@ -279,6 +305,51 @@ $('#task-form').addEventListener('submit', event => {
   toast(`${agent.name}에게 맡겼어요 (데모)`);
 });
 
+// ---------------- Claude Code connection ----------------
+interface SetupStatus { connected: boolean; node: boolean; settingsPath: string }
+let setup: SetupStatus | undefined;
+
+function renderSetup() {
+  if (!setup) return;
+  $('#setup-state').textContent = setup.connected ? '연결됨' : '연결 안 됨';
+  $('#setup-note').textContent = !setup.node
+    ? 'Node.js가 있어야 훅이 실행돼요. nodejs.org에서 설치한 뒤 Claude Code를 다시 열어 주세요.'
+    : setup.connected ? '새로 여는 Claude Code 세션부터 사무실에 나타나요.'
+    : '누르면 Claude Code 설정에 훅을 추가해요. 다른 설정은 그대로 두고, 바꾸기 전 파일은 백업해요.';
+  const button = $<HTMLButtonElement>('#setup-button');
+  button.hidden = false;
+  button.textContent = setup.connected ? '연결 해제' : '연결하기';
+  $('#hero-connect').hidden = setup.connected || live;
+}
+
+async function loadSetup() {
+  try {
+    const response = await fetch('/api/setup', { cache: 'no-store' });
+    if (response.ok) { setup = (await response.json()) as SetupStatus; renderSetup(); }
+  } catch { /* the receiver is down; the sync text already says so */ }
+}
+
+async function toggleSetup() {
+  const buttons = [$<HTMLButtonElement>('#setup-button'), $<HTMLButtonElement>('#hero-connect')];
+  buttons.forEach(b => { b.disabled = true; });
+  try {
+    const response = await fetch(`/api/setup/${setup?.connected ? 'disconnect' : 'connect'}`, { method: 'POST' });
+    const body = (await response.json()) as SetupStatus & { error?: string };
+    if (!response.ok) { toast(body.error ?? '연결 설정을 바꾸지 못했어요.'); return; }
+    setup = body;
+    renderSetup();
+    toast(setup.connected ? '연결했어요. Claude Code에서 새 세션을 열어 보세요.' : 'Claude Code 연결을 해제했어요.');
+  } catch {
+    toast('수신기에 연결할 수 없어요.');
+  } finally {
+    buttons.forEach(b => { b.disabled = false; });
+  }
+}
+
+$('#setup-button').addEventListener('click', () => void toggleSetup());
+$('#hero-connect').addEventListener('click', () => void toggleSetup());
+window.addEventListener('focus', () => void loadSetup());
+
 // ---------------- rename ----------------
 const dialog = $<HTMLDialogElement>('#rename-dialog');
 const nameInput = $<HTMLInputElement>('#rename-input');
@@ -350,5 +421,6 @@ $('#brand-mark').style.backgroundImage = `url(${propUrl('house')})`;
 updateClock();
 setInterval(updateClock, 30_000);
 startDemo();
+void loadSetup();
 poll();
 setInterval(poll, POLL_MS);

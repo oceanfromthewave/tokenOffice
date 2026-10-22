@@ -3,7 +3,7 @@
 // and behind furniture correctly. People walk A* routes on a 2px grid and never cut through furniture.
 import { iconForTool, shirtColor, type Pose, type PropName } from '../../shared/pixels.ts';
 import { Crowd, type OfficeAgent, type Walker } from './crowd.ts';
-import { DESKS, FLOOR_Y, LOUNGE, SOFA, WORLD_H, WORLD_W } from './layout.ts';
+import { DESKS, DOOR, FLOOR_Y, LOUNGE, SOFA, WORLD_H, WORLD_W } from './layout.ts';
 import { iconCanvas, propCanvas, workerCanvas } from './sprites.ts';
 
 export type { OfficeAgent };
@@ -116,6 +116,10 @@ export class Office {
     g.translate(this.lx, 0);
     this.drawWhiteboard(g);
     this.drawClock(g);
+    // the door swings open while someone is walking through it
+    if ([...this.crowd.walkers.values()].some(w => w.route.length && Math.abs(w.x - DOOR.x) < 12 && w.y - DOOR.y < 16)) {
+      rect(g, 150, 18, 13, 26, '#141a38'); rect(g, 150, 18, 3, 26, '#4a5488'); rect(g, 151, 30, 1, 2, '#ffd166');
+    }
     const items: Drawable[] = [...this.furniture];
     for (const w of this.crowd.walkers.values()) items.push({ key: w.y + 0.25, draw: ctx => this.drawWalker(ctx, w) });
     items.sort((a, b) => a.key - b.key).forEach(d => d.draw(g));
@@ -178,7 +182,10 @@ export class Office {
       ctx.fillStyle = '#f1f2fb';
       ctx.fillText(text, x + 5, y + height / 2 + 1);
     };
-    label('휴게실', 182, 104, '#5a4d92');
+    // the lounge sign sits at the rug's bottom-left corner and steps aside whenever someone is in front of it
+    const signBox = { x0: 168, x1: 198, y0: 130, y1: 138 };
+    const inFront = [...this.crowd.walkers.values()].some(w => w.x + 8 > signBox.x0 && w.x - 8 < signBox.x1 && w.y > signBox.y0 && w.y - 23 < signBox.y1);
+    if (!inFront) label('휴게실', 183, 138, '#5a4d92');
     for (const w of this.crowd.walkers.values()) {
       // the middle sofa seat lifts its tag so three people sitting together stay readable
       const lift = w.at === LOUNGE[1] && !w.route.length ? 4 : 0;
