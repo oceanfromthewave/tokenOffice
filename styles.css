@@ -247,8 +247,9 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .pinboard:before { content: ''; position: absolute; left: 8%; top: 12%; width: 14%; height: 24%; background: #ffd77a; box-shadow: 30px 6px #8fe3d6, 62px -2px #ffa8a0; transform: rotate(-3deg); }
 .pinboard span { font: 12px var(--mono); color: #4a5280; margin-top: 4px; }
 .wall-clock { position: absolute; left: 49%; top: 4%; width: 34px; height: 34px; margin-left: -17px; border-radius: 50%; background: #f4f6ff; border: 3px solid #8b93b4; box-shadow: 0 3px 6px #00000050; }
-.wall-clock:before { content: ''; position: absolute; left: 50%; top: 6px; width: 2px; height: 11px; margin-left: -1px; background: #1c2140; transform-origin: bottom; }
-.wall-clock:after { content: ''; position: absolute; left: 50%; top: 11px; width: 2px; height: 6px; margin-left: -1px; background: #1c2140; transform-origin: bottom; transform: rotate(60deg); }
+.wall-clock:before, .wall-clock:after { content: ''; position: absolute; left: 50%; width: 2px; margin-left: -1px; background: #1c2140; border-radius: 2px; transform-origin: 50% 100%; }
+.wall-clock:before { top: 3px; height: 11px; rotate: var(--m, 0deg); } /* minute */
+.wall-clock:after { top: 7px; height: 7px; width: 3px; margin-left: -1.5px; rotate: var(--h, 0deg); } /* hour */
 
 .bookshelf { /* filing cabinet */
   position: absolute; left: 2%; top: 36%; width: 6%; height: 13%; border-radius: 3px;
@@ -303,41 +304,25 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .mug { position: absolute; right: 3px; top: 11px; font-size: 16px; }
 .task-note { position: absolute; left: 4px; top: 13px; font-size: 14px; }
 
-.character { position: absolute; left: 50%; top: 9%; transform: translateX(-50%); width: 42px; height: 49px; z-index: 2; transition: top .55s, left .55s; }
+/* ---------- characters: 8-bit office workers ----------
+   Sprites live in sprites.css (generated). Each sheet holds two frames: 0% and 100% background position. */
+.character { position: absolute; left: 50%; top: 12%; transform: translateX(-50%); width: 64px; height: 92px; z-index: 2; transition: top .55s, left .55s; }
+.character > span:not(.name-tag) { display: none; }
+.character:before { content: ''; position: absolute; inset: 0; z-index: 1; background: var(--sprite) 0 0 / 200% 100% no-repeat; image-rendering: pixelated; }
 .workstation .character:after { /* office chair back */
-  content: ''; position: absolute; left: 1px; top: 12px; width: 40px; height: 38px; border-radius: 13px 13px 6px 6px;
-  background: #20264a; box-shadow: inset 0 3px #343c6e; z-index: 0;
+  content: ''; position: absolute; left: -4px; top: 36px; width: 72px; height: 56px; z-index: 0;
+  background: #2a3060; border-top: 3px solid #4a5488; box-shadow: inset -6px 0 #20264a;
 }
-.character[data-look="momo"] { --fur: #f3e2bf; --ear: #d9b99d; }
-.character[data-look="lumi"] { --fur: #d9e9cf; --ear: #b8d0ad; }
-.character[data-look="tori"] { --fur: #eee0e0; --ear: #dcb7b7; }
-.character[data-look="koko"] { --fur: #e8dff2; --ear: #c7b6da; }
-.body { position: absolute; left: 4px; top: 8px; width: 34px; height: 34px; background: var(--fur, #f4dfba); border-radius: 45% 48% 42% 43%; box-shadow: inset -5px -4px #0000001a, 0 3px 3px #0000004d; z-index: 2; }
-.ear { position: absolute; top: 1px; width: 12px; height: 17px; border-radius: 70% 70% 35% 35%; background: var(--fur, #f4dfba); z-index: 1; }
-.ear.left { left: 5px; transform: rotate(-20deg); }
-.ear.right { right: 5px; transform: rotate(20deg); }
-.ear:after { content: ''; position: absolute; inset: 4px 3px 5px; background: var(--ear, #dfb8a0); border-radius: 50%; }
-.eye { position: absolute; top: 20px; width: 3px; height: 4px; background: #2a2630; border-radius: 50%; z-index: 3; }
-.eye.left { left: 13px; }
-.eye.right { right: 13px; }
-.nose { position: absolute; top: 25px; left: 19px; width: 4px; height: 3px; background: #74645c; border-radius: 50%; z-index: 3; }
-.cheek { position: absolute; top: 27px; width: 6px; height: 3px; background: #e8a99a; border-radius: 50%; opacity: .85; z-index: 3; }
-.cheek.left { left: 7px; }
-.cheek.right { right: 7px; }
-.arm { position: absolute; top: 26px; width: 8px; height: 5px; border-radius: 9px; background: var(--fur, #f4dfba); z-index: 4; }
-.arm.left { left: -1px; transform: rotate(35deg); }
-.arm.right { right: -1px; transform: rotate(-35deg); }
-.foot { position: absolute; bottom: 2px; width: 10px; height: 5px; border-radius: 50%; background: var(--fur, #f4dfba); z-index: 1; }
-.foot.left { left: 9px; }
-.foot.right { right: 9px; }
-.char-hat { display: none; position: absolute; top: -6px; left: 10px; width: 23px; height: 11px; background: var(--lamp); border-radius: 10px 10px 3px 3px; z-index: 5; }
+.workstation[data-state="working"] .character:before, .character.roamer:before { animation: sprite .45s steps(1) infinite; }
 .name-tag {
-  position: absolute; top: -22px; left: 50%; transform: translateX(-50%);
+  position: absolute; top: -26px; left: 50%; transform: translateX(-50%);
   font-size: 12px; font-weight: 700; color: var(--text); white-space: nowrap;
-  background: var(--side); border: 1px solid var(--line); border-radius: 7px; padding: 2px 8px;
+  background: var(--side); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px;
   box-shadow: 0 3px 8px #00000066;
 }
-.typing { position: absolute; display: none; left: 34px; top: 21px; font: 11px var(--mono); color: var(--screen); }
+
+/* hidden: the sprite's hands do the typing */
+.typing { display: none; }
 
 /* status chip: colour comes from --chip, text is always dark-on-colour */
 .workstation { --chip: var(--panel-2); --chip-ink: var(--text); }
@@ -347,20 +332,19 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 .workstation[data-state="meeting"] { --chip: #ff9fd0; --chip-ink: #4a0a2c; }
 .workstation[data-state="error"] { --chip: var(--coral); --chip-ink: #4a0f09; }
 .status-chip {
-  position: absolute; left: 50%; top: -42px; transform: translateX(-50%); white-space: nowrap;
+  position: absolute; left: 50%; top: -52px; transform: translateX(-50%); white-space: nowrap;
   border-radius: 9px; padding: 3px 10px; background: var(--chip); color: var(--chip-ink);
   font-size: 12px; font-weight: 700; box-shadow: 0 3px 8px #00000055;
 }
 .status-chip:after { content: ''; position: absolute; bottom: -4px; left: 50%; margin-left: -4px; border-width: 4px 4px 0; border-style: solid; border-color: var(--chip) transparent transparent; }
 
 .workstation[data-state="working"] .character { animation: workBob .75s ease-in-out infinite alternate; }
-.workstation[data-state="working"] .typing { display: block; animation: blink 1s steps(2, end) infinite; }
 .workstation[data-state="working"] .keyboard { animation: keyTap .45s steps(2, end) infinite; }
 .workstation[data-state="break"] .character { top: 42%; animation: idleSway 2.5s ease-in-out infinite alternate; }
 .workstation[data-state="break"] .desk { opacity: .75; }
 .workstation[data-state="meeting"] .char-hat { display: block; }
 
-.speech { position: absolute; top: 4%; left: 68%; font-size: 14px; color: var(--lamp); animation: float 2s ease-in-out infinite; }
+.speech { position: absolute; top: 14%; left: 76%; font-size: 14px; color: var(--lamp); animation: float 2s ease-in-out infinite; }
 
 .empty-office {
   position: absolute; left: 50%; top: 68%; transform: translate(-50%, -50%); z-index: 3; white-space: nowrap;
@@ -424,7 +408,7 @@ button:focus-visible, input:focus-visible, a:focus-visible { outline: 3px solid 
 
 @keyframes workBob { from { transform: translateX(-50%) translateY(0); } to { transform: translateX(-50%) translateY(2px); } }
 @keyframes idleSway { from { transform: translateX(-50%) rotate(-3deg); } to { transform: translateX(-50%) rotate(3deg); } }
-@keyframes blink { 50% { opacity: .2; } }
+@keyframes sprite { 50% { background-position: 100% 0; } }
 @keyframes keyTap { 50% { transform: translateY(1px); } }
 @keyframes float { 50% { transform: translateY(-4px); } }
 @keyframes roamBob { to { translate: 0 2px; } }

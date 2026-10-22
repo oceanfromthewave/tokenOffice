@@ -208,6 +208,7 @@ const server = createServer(async (request, response) => {
     '/': ['index.html', 'text/html'],
     '/index.html': ['index.html', 'text/html'],
     '/styles.css': ['styles.css', 'text/css'],
+    '/sprites.css': ['sprites.css', 'text/css'],
     '/app.js': ['app.js', 'text/javascript'],
   };
   if (request.method === 'GET' && staticFiles[url.pathname]) {
