@@ -24,12 +24,15 @@ test('subagents are separate agents and leave 20s after they finish', () => {
   assert.equal(office.snapshot(30_000).agents.length, 0);
 });
 
-test('session end removes the session and its subagents; junk is rejected', () => {
+test('session end keeps the main agent seated and removes its subagents; junk is rejected', () => {
   const office = new OfficeState();
   office.handle({ event: 'PreToolUse', sessionId: 's1' }, 0);
   office.handle({ event: 'SubagentStart', sessionId: 's1', agentId: 'a1' }, 0);
   office.handle({ event: 'SessionEnd', sessionId: 's1' }, 0);
-  assert.equal(office.snapshot(0).agents.length, 0);
+  const agents = office.snapshot(0).agents;
+  assert.equal(agents.length, 1);
+  assert.equal(agents[0]?.isSubagent, false);
+  assert.equal(agents[0]?.state, 'break');
   assert.equal(office.handle({ event: 42, sessionId: 's1' }), false);
   assert.equal(office.handle({ event: 'Stop' }), false);
 });

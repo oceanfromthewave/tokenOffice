@@ -10,6 +10,8 @@ export interface AgentRecord {
   agentId: string;
   name: string;
   project: string;
+  projectParent: string;
+  projectId: string;
   agentType: string;
   state: AgentState;
   tool: string;
@@ -22,8 +24,11 @@ export interface ActivityItem {
   id: string;
   at: number;
   provider: Provider;
+  sourceId: string;
   agent: string;
   project: string;
+  projectParent: string;
+  projectId: string;
   text: string;
   tool: string;
 }
@@ -31,10 +36,20 @@ export interface ActivityItem {
 export interface Snapshot {
   connected: boolean;
   providers: Provider[];
+  lastSeenAt: Partial<Record<Provider, number>>;
   agents: AgentRecord[];
   activity: ActivityItem[];
   metrics: { events: number; tools: number; turns: number };
   updatedAt: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  agentId: string;
+  role: 'user' | 'assistant';
+  text: string;
+  at: number;
+  status: 'complete' | 'sending' | 'error';
 }
 
 /** Sanitized fields forwarded by either tool's hook. Everything is optional because it comes from outside. */
@@ -46,6 +61,9 @@ export interface HookEvent {
   agentType?: unknown;
   teammateName?: unknown;
   project?: unknown;
+  projectParent?: unknown;
+  projectId?: unknown;
+  cwd?: unknown;
   toolName?: unknown;
   notificationType?: unknown;
 }

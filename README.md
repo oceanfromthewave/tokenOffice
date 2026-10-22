@@ -1,8 +1,8 @@
 # tokenOffice
 
-A pixel-art office that shows your Claude Code and Codex sessions and subagents at work. Each session is a worker at a desk. They type while tools run and raise a speech bubble when they need your permission. When a turn ends they walk to the lounge. Subagents come in through the door as robots and leave when they finish.
+A pixel-art office that shows your Claude Code and Codex sessions and subagents at work. Each main session is a worker who stays at their own desk while working, idle or complete. They type while tools run and raise a speech bubble when they need your permission. Subagents come in through the door as robots and leave when they finish.
 
-Everything stays on this computer. The app listens only on `127.0.0.1` and keeps hook events in memory. The hooks forward event names, session IDs, the project folder name, tool names and subagent type. They never send prompts, tool inputs, notification text, file contents or transcript paths.
+The app listens only on `127.0.0.1` and keeps hook events and chat history in memory. Hooks send event names, session IDs, project and parent folder names, tool names, subagent type, a short project-path hash, and the working directory to the local receiver. The working directory is used to resume that session for chat. Hook events do not include prompts, tool inputs, notification text, file contents or transcript paths. When you explicitly send a chat message, tokenOffice passes that text to the installed Claude Code or Codex CLI, which communicates with its provider under your normal account and settings. Chat history is not saved to disk.
 
 ## Install (Windows)
 
@@ -27,7 +27,7 @@ Each entry looks like:
 { "hooks": [{ "type": "command", "command": "node", "args": ["<home>/.claude/hooks/token-office.cjs"], "async": true }] }
 ```
 
-The hook is async and best-effort, so a closed dashboard never slows Claude Code down. The office shows a demo until the first event arrives. It switches to "Claude Code 연결됨" as soon as a session sends anything.
+The hook is async and best-effort, so a closed dashboard never slows Claude Code down. The office starts empty and shows only real sessions after the first event arrives. Main session characters stay at their desks after a turn ends or the CLI session closes.
 
 ## Connect Codex
 
@@ -39,6 +39,7 @@ Codex requires you to review and trust a new or changed hook before it runs. Aft
 
 - Click a worker, in the office or the sidebar, to see what they are doing.
 - Double-click a worker, or use ✎ in the sidebar, to rename them or pick another character. A session's name is remembered per project folder and a subagent's per subagent type, on this computer.
+- Select an idle main session in the chat panel to message it. The message resumes that session through its installed CLI. Messaging is disabled while the agent is working or waiting for permission; subagents cannot be messaged separately. The installed CLI's account and permission policy applies, and tokenOffice cannot approve permission prompts.
 - The windows follow your local time of day. The whiteboard sorts everyone into working, waiting and resting. The printer runs when someone finishes a turn.
 
 ## Develop

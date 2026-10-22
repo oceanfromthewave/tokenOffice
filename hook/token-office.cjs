@@ -1,4 +1,5 @@
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 const provider = process.argv[2] === 'codex' ? 'codex' : 'claude';
 
 // Tool inputs (e.g. a Write of a big file) can be large; only a few small fields are forwarded, but the JSON must parse.
@@ -15,11 +16,19 @@ process.stdin.on('data', chunk => {
 process.stdin.on('end', async () => {
   try {
     const input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    const cwd = typeof input.cwd === 'string' ? input.cwd : '';
+    const normalizedCwd = cwd ? path.resolve(cwd) : '';
+    const projectId = normalizedCwd
+      ? createHash('sha256').update(process.platform === 'win32' ? normalizedCwd.toLowerCase() : normalizedCwd).digest('hex').slice(0, 10)
+      : '';
     const event = {
       provider,
       event: input.hook_event_name,
       sessionId: input.session_id,
-      project: input.cwd ? path.basename(input.cwd) : '',
+      project: cwd ? path.basename(cwd) : '',
+      projectParent: cwd ? path.basename(path.dirname(cwd)) : '',
+      projectId,
+      cwd,
       toolName: input.tool_name,
       agentId: input.agent_id,
       agentType: input.agent_type,

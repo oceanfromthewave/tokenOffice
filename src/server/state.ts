@@ -1,5 +1,5 @@
 // In-memory office state built from Claude Code and Codex hook events. Nothing here touches disk or the network.
-import type { ActivityItem, AgentRecord, HookEvent, Provider, Snapshot } from '../shared/types.ts';
+import type { ActivityItem, AgentRecord, ChatMessage, HookEvent, Provider, Snapshot } from '../shared/types.ts';
 
 const ACTIVITY_LIMIT = 16;
 const STALE_MS = 4 * 60 * 60 * 1000;
@@ -10,8 +10,11 @@ const text = (value: unknown, max = 80) => (typeof value === 'string' ? value.sl
 export class OfficeState {
   private agents = new Map<string, AgentRecord>();
   private activity: ActivityItem[] = [];
+  private projectPaths = new Map<string, string>();
+  private chats = new Map<string, ChatMessage[]>();
   private connected = false;
   private providers = new Set<Provider>();
+  private lastSeenAt: Partial<Record<Provider, number>> = {};
   private metrics = { events: 0, tools: 0, turns: 0 };
 
   /** Applies one hook event. Returns false when the event is not usable. */
@@ -24,16 +27,26 @@ export class OfficeState {
     const provider: Provider = data.provider === 'codex' ? 'codex' : 'claude';
     this.connected = true;
     this.providers.add(provider);
+    this.lastSeenAt[provider] = now;
     this.metrics.events += 1;
     const key = `${provider}:${sessionId}:${agentId || 'main'}`;
     const toolName = text(data.toolName, 60);
     const project = text(data.project, 48) || (provider === 'codex' ? 'Codex' : 'Claude Code');
+    const projectParent = text(data.projectParent, 48);
+    const projectId = text(data.projectId, 16);
+    const cwd = text(data.cwd, 2048);
+    if (cwd) this.projectPaths.set(key, cwd);
 
     if (event === 'SessionEnd' && !agentId) {
       for (const [id, agent] of this.agents) {
         if (agent.provider !== provider || agent.sessionId !== sessionId) continue;
         this.log(agent, event, '', now);
-        this.agents.delete(id);
+        if (agent.isSubagent) {
+          this.agents.delete(id);
+          this.projectPaths.delete(id);
+        } else {
+          this.agents.set(id, { ...agent, state: 'break', tool: '', updatedAt: now });
+        }
       }
       return true;
     }
@@ -47,6 +60,8 @@ export class OfficeState {
       agentId,
       name: isSubagent ? text(data.agentType, 32) || text(data.teammateName, 32) || 'Subagent' : project,
       project,
+      projectParent,
+      projectId,
       agentType: text(data.agentType, 32) || previous?.agentType || '',
       state: previous?.state ?? 'break',
       tool: previous?.tool ?? '',
@@ -108,18 +123,47 @@ export class OfficeState {
     return {
       connected: this.connected,
       providers: [...this.providers],
+      lastSeenAt: { ...this.lastSeenAt },
       agents: [...this.agents.values()].sort((a, b) => a.startedAt - b.startedAt),
-      activity: this.activity.slice(0, 8),
+      activity: this.activity.slice(0, ACTIVITY_LIMIT),
       metrics: { ...this.metrics },
       updatedAt: now,
     };
+  }
+
+  chatTarget(id: string) {
+    const agent = this.agents.get(id);
+    if (!agent) return undefined;
+    return { id: agent.id, provider: agent.provider, sessionId: agent.sessionId, cwd: this.projectPaths.get(id), state: agent.state, isSubagent: agent.isSubagent };
+  }
+
+  chatHistory(agentId: string) {
+    return [...(this.chats.get(agentId) ?? [])];
+  }
+
+  startChat(agentId: string, message: string, now = Date.now()) {
+    const user: ChatMessage = { id: `${now}-${Math.random().toString(36).slice(2, 8)}`, agentId, role: 'user', text: message, at: now, status: 'complete' };
+    const assistant: ChatMessage = { id: `${user.id}-reply`, agentId, role: 'assistant', text: '', at: now, status: 'sending' };
+    const history = [...(this.chats.get(agentId) ?? []), user, assistant].slice(-40);
+    this.chats.set(agentId, history);
+    return assistant.id;
+  }
+
+  finishChat(agentId: string, assistantId: string, text: string, error = false) {
+    const history = this.chats.get(agentId) ?? [];
+    this.chats.set(agentId, history.map(message => message.id === assistantId
+      ? { ...message, text, status: error ? 'error' : 'complete' }
+      : message));
   }
 
   private clean(now: number) {
     for (const [id, agent] of this.agents) {
       const stale = agent.updatedAt < now - STALE_MS;
       const finished = agent.isSubagent && agent.state === 'done' && agent.updatedAt < now - FINISHED_SUBAGENT_MS;
-      if (stale || finished) this.agents.delete(id);
+      if (agent.isSubagent && (stale || finished)) {
+        this.agents.delete(id);
+        this.projectPaths.delete(id);
+      }
     }
   }
 
@@ -143,8 +187,11 @@ export class OfficeState {
       id: `${now}-${Math.random().toString(36).slice(2, 7)}`,
       at: now,
       provider: agent.provider,
+      sourceId: agent.id,
       agent: agent.name,
       project: agent.project,
+      projectParent: agent.projectParent,
+      projectId: agent.projectId,
       text: labels[event] ?? '상태 업데이트',
       tool,
     });

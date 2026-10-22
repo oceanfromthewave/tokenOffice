@@ -41,7 +41,7 @@
       <header class="topbar">
         <div class="crumb"><button class="icon-btn mobile-menu" id="menu-button" aria-label="메뉴 열기">☰</button><strong>가상 사무실</strong></div>
         <div class="top-actions">
-          <div class="live-pill" id="live-pill" title="연동된 도구가 훅 이벤트를 보내면 실제 상태로 바뀌어요"><i class="live-dot"></i><span id="live-text">데모 모드 · 연결 대기</span></div>
+          <div class="live-pill" id="live-pill" title="연결 여부가 아닌 마지막 훅 이벤트 시각을 표시해요"><i class="live-dot"></i><span id="live-text">실제 이벤트 수신 대기</span></div>
         </div>
       </header>
 
@@ -49,7 +49,7 @@
         <div>
           <div class="eyebrow" id="current-date"></div>
           <h1 id="greeting">안녕하세요</h1>
-          <p id="hero-text">지금은 데모 화면이에요. Claude Code나 Codex 세션을 시작하면 실제 상태로 바뀌어요.</p>
+          <p id="hero-text">Claude Code 또는 Codex를 연결하고 CLI 세션을 시작하면 실제 에이전트가 나타나요.</p>
         </div>
         <div class="hero-controls"><span class="date-button" id="current-time"></span></div>
       </section>
@@ -70,19 +70,47 @@
           <canvas id="office-canvas" role="img" aria-label="에이전트들이 일하는 픽셀 사무실"></canvas>
           <div class="empty-office" id="empty-office" hidden>Claude Code 또는 Codex 세션을 기다리고 있어요</div>
         </div>
-        <div class="scene-footer"><span>일하면 자리로, 쉬면 휴게실로 가요</span><span><i class="live-dot"></i><span id="sync-text">방금 업데이트</span></span></div>
+        <div class="scene-footer"><span>에이전트는 작업이 끝나도 자기 자리에 머물러요</span><span><i class="live-dot"></i><span id="sync-text">방금 업데이트</span></span></div>
       </section>
 
       <section class="below-grid">
-        <div class="panel" id="activity"><div class="panel-head"><h3>방금 있었던 일</h3></div><div class="activity" id="activity-list"></div></div>
-        <div class="panel" id="queue"><div class="panel-head"><h3>다음 할 일</h3></div><div id="queue-list"></div></div>
+        <div class="panel" id="activity">
+          <div class="panel-head activity-head">
+            <h3>방금 있었던 일</h3>
+            <div class="activity-filters" aria-label="활동 필터">
+              <select id="activity-provider-filter" aria-label="도구 필터" disabled>
+                <option value="all">모든 도구</option>
+                <option value="claude">Claude Code</option>
+                <option value="codex">Codex</option>
+              </select>
+              <select id="activity-project-filter" aria-label="프로젝트 필터" disabled>
+                <option value="all">모든 프로젝트</option>
+              </select>
+            </div>
+          </div>
+          <div class="activity" id="activity-list"></div>
+        </div>
+        <div class="panel" id="queue"><div class="panel-head"><h3>사용 방법</h3></div><div id="queue-list"></div></div>
       </section>
 
-      <form class="composer" id="task-form">
-        <span class="composer-mark">&gt;</span>
-        <input id="task-input" type="text" placeholder="쉬고 있는 에이전트에게 맡길 일을 적어보세요 (데모)" autocomplete="off" aria-label="맡길 일">
-        <button class="send-btn" type="submit">맡기기</button>
-      </form>
+      <section class="panel chat-panel" id="agent-chat" aria-label="에이전트 채팅">
+        <div class="panel-head chat-head">
+          <h3>에이전트 채팅</h3>
+          <select id="chat-agent-select" aria-label="메시지를 보낼 에이전트" disabled>
+            <option value="">에이전트를 선택해 주세요</option>
+          </select>
+        </div>
+        <div class="chat-messages" id="chat-messages" aria-live="polite">
+          <div class="activity-empty">실제 CLI 세션이 감지되면 해당 에이전트에게 메시지를 보낼 수 있어요.</div>
+        </div>
+        <div class="chat-status" id="chat-status">에이전트 세션을 기다리고 있어요.</div>
+        <form class="composer" id="chat-form">
+          <span class="composer-mark">&gt;</span>
+          <input id="chat-input" type="text" placeholder="선택한 에이전트에게 메시지 보내기" autocomplete="off" aria-label="에이전트에게 보낼 메시지" maxlength="4000" disabled>
+          <button class="send-btn" type="submit" disabled>보내기</button>
+        </form>
+        <p class="chat-note">메시지는 설치된 Claude Code 또는 Codex CLI를 통해 제공자에게 전달돼요. CLI의 계정과 권한 정책이 적용되며, 이 화면에서는 권한 요청을 승인할 수 없어요.</p>
+      </section>
     </main>
   </div>
   <dialog class="rename-dialog" id="rename-dialog" aria-labelledby="rename-title">

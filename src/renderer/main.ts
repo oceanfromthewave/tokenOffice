@@ -1,12 +1,24 @@
-// Dashboard: polls the local hook receiver for Claude Code and Codex; plays a demo until the first event arrives.
+// Dashboard: polls the local hook receiver for Claude Code and Codex sessions.
 import { LOOKS, type Look } from '../shared/pixels.ts';
-import type { ActivityItem, AgentRecord, AgentState, Provider, Snapshot } from '../shared/types.ts';
+import type { ActivityItem, AgentRecord, AgentState, ChatMessage, Provider, Snapshot } from '../shared/types.ts';
 import { Office, type OfficeAgent } from './office/office.ts';
 import { headUrl, propUrl } from './office/sprites.ts';
 
 /** `key` names whoever this is across sessions (project for a session, type for a subagent) so a rename sticks. */
-interface ViewAgent extends OfficeAgent { role: string; key: string; baseName: string; provider?: Provider }
+interface ViewAgent extends OfficeAgent { role: string; key: string; baseName: string; projectLabel?: string; provider?: Provider }
 interface Stats { tools: number; turns: number; events: number }
+interface ActivityRow {
+  agent: string;
+  text: string;
+  detail: string;
+  at: number;
+  icon: string;
+  tool: string;
+  provider?: Provider;
+  sourceId?: string;
+  projectId?: string;
+}
+interface ProjectRef { project: string; parent: string; id: string }
 
 const LABEL: Record<AgentState, string> = { working: '작업 중', break: '휴식 중', done: '완료', waiting: '응답 대기', error: '오류' };
 const PROVIDER_NAME: Record<Provider, string> = { claude: 'Claude Code', codex: 'Codex' };
@@ -25,6 +37,11 @@ let live = false;
 let selected = '';
 let lastTurns = 0;
 let lastSnapshot: Snapshot | undefined;
+let activityRows: ActivityRow[] = [];
+let knownProjects = new Map<string, ProjectRef>();
+let chatAgentId = '';
+const chatPending = new Set<string>();
+let chatPollTimer = 0;
 
 // ---------------- names and characters people chose ----------------
 interface Profile { name?: string; look?: Look }
@@ -55,7 +72,7 @@ function render(stats: Stats, instant = false) {
   $('#event-count').textContent = String(stats.events);
   $('#mood').textContent = mood();
   $('#room-text').textContent = agents.length ? (working ? `${working}명 작업 중` : '모두 쉬는 중') : '아무도 없어요';
-  $('#empty-office').hidden = !live || agents.length > 0;
+  $('#empty-office').hidden = agents.length > 0;
   if (stats.turns > lastTurns) office.print();
   lastTurns = stats.turns;
 }
@@ -88,19 +105,84 @@ function renderSidebar() {
     row.append(pick, edit);
     return row;
   }));
+  renderChatTargets();
 }
 
-function renderActivity(items: { agent: string; text: string; detail: string; at: number; icon: string }[]) {
+function projectLabels() {
+  const nameCounts = new Map<string, number>();
+  for (const ref of knownProjects.values()) nameCounts.set(ref.project, (nameCounts.get(ref.project) ?? 0) + 1);
+  const labels = new Map<string, string>();
+  for (const ref of knownProjects.values()) {
+    labels.set(ref.id, (nameCounts.get(ref.project) ?? 0) > 1 && ref.parent ? `${ref.parent}/${ref.project}` : ref.project);
+  }
+  const labelCounts = new Map<string, number>();
+  for (const label of labels.values()) labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1);
+  for (const ref of knownProjects.values()) {
+    if ((labelCounts.get(labels.get(ref.id) ?? '') ?? 0) > 1) labels.set(ref.id, `${labels.get(ref.id)} · ${ref.id.slice(0, 5)}`);
+  }
+  return labels;
+}
+
+function updateActivityProjectOptions() {
+  const select = $<HTMLSelectElement>('#activity-project-filter');
+  const labels = projectLabels();
+  const options = [...labels].map(([value, label]) => ({ value, label })).sort((a, b) => a.label.localeCompare(b.label, 'ko'));
+  const signature = JSON.stringify(options);
+  if (select.dataset.options === signature) return;
+  const previous = select.value;
+  select.replaceChildren(new Option('모든 프로젝트', 'all'), ...options.map(option => new Option(option.label, option.value)));
+  select.dataset.options = signature;
+  select.value = options.some(option => option.value === previous) ? previous : 'all';
+}
+
+function groupedActivity(items: ActivityRow[]) {
+  const groups: (ActivityRow & { count: number })[] = [];
+  const recentTools = new Map<string, ActivityRow & { count: number }>();
+  for (const item of items) {
+    if (!item.tool || !item.sourceId) { groups.push({ ...item, count: 1 }); continue; }
+    const key = [item.sourceId, item.provider, item.projectId, item.tool, item.text].join('\0');
+    let group = recentTools.get(key);
+    if (!group || group.at - item.at > 30_000) {
+      group = { ...item, count: 1 };
+      recentTools.set(key, group);
+      groups.push(group);
+    } else group.count += 1;
+  }
+  return groups;
+}
+
+function drawActivity() {
   const list = $('#activity-list');
-  if (!items.length) { list.replaceChildren(el('div', 'activity-empty', '아직 기록된 활동이 없어요.')); return; }
+  const provider = $<HTMLSelectElement>('#activity-provider-filter').value;
+  const project = $<HTMLSelectElement>('#activity-project-filter').value;
+  const filtered = activityRows.filter(item =>
+    (provider === 'all' || item.provider === provider) && (project === 'all' || item.projectId === project));
+  const items = groupedActivity(filtered).slice(0, 8);
+  if (!items.length) {
+    list.replaceChildren(el('div', 'activity-empty', activityRows.length ? '조건에 맞는 활동이 없어요.' : '아직 기록된 활동이 없어요.'));
+    return;
+  }
   list.replaceChildren(...items.map(item => {
     const row = el('div', 'activity-row');
     const text = el('div', 'activity-text');
-    text.append(el('strong', '', item.agent), document.createTextNode(` ${item.text}`), el('small', '', item.detail));
+    text.append(el('strong', '', item.agent), document.createTextNode(` ${item.text}${item.count > 1 ? ` · ${item.count}회` : ''}`), el('small', '', item.detail));
     row.append(el('div', 'activity-icon', item.icon), text, el('span', 'activity-time', ago(item.at)));
     return row;
   }));
 }
+
+function renderActivity(items: ActivityRow[], enabled = live) {
+  activityRows = items;
+  const providerFilter = $<HTMLSelectElement>('#activity-provider-filter');
+  const projectFilter = $<HTMLSelectElement>('#activity-project-filter');
+  providerFilter.disabled = !enabled;
+  projectFilter.disabled = !enabled;
+  updateActivityProjectOptions();
+  drawActivity();
+}
+
+$('#activity-provider-filter').addEventListener('change', drawActivity);
+$('#activity-project-filter').addEventListener('change', drawActivity);
 
 function renderQueue(items: { icon: string; title: string; detail: string; tag: string; wait?: boolean }[]) {
   $('#queue-list').replaceChildren(...items.map(item => {
@@ -117,6 +199,11 @@ function select(id: string) {
   if (!agent) return;
   selected = id;
   office.select(id);
+  if (!agent.isSubagent) {
+    chatAgentId = id;
+    $<HTMLSelectElement>('#chat-agent-select').value = id;
+    void loadChatHistory(id);
+  }
   renderSidebar();
   toast(`${agent.name} · ${LABEL[agent.state]}${agent.tool ? ` · ${agent.tool}` : ''}`);
 }
@@ -142,6 +229,7 @@ let nextLook = 0;
 // New sessions get a friendly random name instead of the folder name; it sticks for the life of the session.
 const PERSON_NAMES = ['하루', '보리', '단비', '누리', '미르', '솔이', '나래', '다온', '가람', '소담', '라온', '별하', '지오', '해솔', '윤슬', '도담'];
 const ROBOT_NAMES = ['삐삐', '뚝딱', '볼트', '너트', '깡통', '반짝', '찌릿', '또롱', '덜컹', '빙글'];
+const pick = <T,>(items: readonly T[]) => items[Math.floor(Math.random() * items.length)]!;
 const AUTO_NAME_STORE = 'tokenOffice.autoNames';
 const autoNames = new Map<string, string>(((): [string, string][] => {
   try { return JSON.parse(localStorage.getItem(AUTO_NAME_STORE) ?? '[]') as [string, string][]; } catch { return []; }
@@ -160,32 +248,48 @@ function autoName(record: AgentRecord, taken: Set<string>): string {
   return name;
 }
 
-function fromRecords(records: AgentRecord[]): ViewAgent[] {
+function projectIdentity(record: Pick<AgentRecord, 'project' | 'projectParent' | 'projectId'>) {
+  return record.projectId || [record.projectParent, record.project].filter(Boolean).join('/') || record.project;
+}
+
+function rememberProjects(snapshot: Snapshot) {
+  for (const item of [...snapshot.agents, ...snapshot.activity]) {
+    if (!item.project) continue;
+    const id = projectIdentity(item);
+    knownProjects.set(id, { id, project: item.project, parent: item.projectParent });
+  }
+}
+
+function fromRecords(records: AgentRecord[], labels: Map<string, string>): ViewAgent[] {
   const taken = new Set(records.map(r => autoNames.get(r.id)).filter((n): n is string => Boolean(n)));
   const seen = new Map<string, number>();
   return records.map(r => {
     if (!looks.has(r.id)) looks.set(r.id, r.isSubagent ? 'bot' : LOOKS[nextLook++ % LOOKS.length]!);
-    const key = r.provider === 'claude'
-      ? r.isSubagent ? `sub:${r.agentType || r.name}` : `main:${r.project}`
-      : r.isSubagent ? `codex:sub:${r.agentType || r.name}` : `codex:main:${r.project}`;
-    const profile = profiles[key] ?? {};
+    const projectId = projectIdentity(r);
+    const key = r.isSubagent
+      ? r.provider === 'claude' ? `sub:${r.agentType || r.name}` : `codex:sub:${r.agentType || r.name}`
+      : `main:${r.provider}:${projectId}`;
+    const legacyKey = r.provider === 'claude' ? `main:${r.project}` : `codex:main:${r.project}`;
+    const profile = profiles[key] ?? profiles[legacyKey] ?? {};
     const generated = autoName(r, taken);
     taken.add(generated);
     const name = profile.name || generated;
     const count = (seen.get(name) ?? 0) + 1;
     seen.set(name, count);
+    const projectLabel = labels.get(projectId) ?? r.project;
     return {
       id: r.id,
       provider: r.provider,
       key,
       baseName: generated,
+      projectLabel,
       name: count > 1 ? `${name} ${count}` : name,
       look: profile.look ?? looks.get(r.id)!,
       state: r.state,
       tool: r.tool,
       isSubagent: r.isSubagent,
       // the folder (or the subagent's type) still shows under the name
-      role: [PROVIDER_NAME[r.provider], r.isSubagent ? r.agentType || '서브에이전트' : r.project, r.tool].filter(Boolean).join(' · '),
+      role: [PROVIDER_NAME[r.provider], r.isSubagent ? r.agentType || '서브에이전트' : projectLabel, r.tool].filter(Boolean).join(' · '),
     };
   });
 }
@@ -194,19 +298,35 @@ function applySnapshot(snapshot: Snapshot) {
   lastSnapshot = snapshot;
   const first = !live;
   live = true;
-  stopDemo();
-  agents = fromRecords(snapshot.agents);
-  const sourceText = snapshot.providers.map(provider => PROVIDER_NAME[provider]).join(' + ') || '연동 도구';
-  $('#live-text').textContent = `${sourceText} 연결됨`;
-  $('#live-pill').classList.add('connected');
-  $('#hero-text').textContent = agents.length ? `${sourceText} 세션의 실제 상태를 보여주고 있어요.` : `${sourceText} 세션을 기다리고 있어요.`;
+  rememberProjects(snapshot);
+  const labels = projectLabels();
+  agents = fromRecords(snapshot.agents, labels);
+  const providerText = snapshot.providers.map(provider => {
+    const lastSeen = snapshot.lastSeenAt[provider];
+    return `${PROVIDER_NAME[provider]} · ${lastSeen ? ago(lastSeen) : '수신 기록 있음'}`;
+  });
+  const seenTimes = Object.values(snapshot.lastSeenAt).filter((at): at is number => typeof at === 'number');
+  const latestEvent = Math.max(0, ...seenTimes);
+  const pill = $('#live-pill');
+  $('#live-text').textContent = providerText.join('  /  ') || '실제 이벤트 수신 대기';
+  pill.title = '연결 여부가 아닌, 제공자별 마지막 훅 이벤트 시각이에요.';
+  pill.classList.toggle('recent', latestEvent > 0 && Date.now() - latestEvent < 60_000);
+  const sourceNames = snapshot.providers.map(provider => PROVIDER_NAME[provider]).join(' + ') || '연동 도구';
+  $('#hero-text').textContent = agents.length ? `${sourceNames} 세션의 실제 상태를 보여주고 있어요.` : `${sourceNames}의 새 이벤트를 기다리고 있어요. 마지막 이벤트는 ${latestEvent ? ago(latestEvent) : '아직 없어요'}.`;
   render(snapshot.metrics, first);
-  renderActivity(snapshot.activity.map((a: ActivityItem) => ({ agent: a.agent, text: a.text, detail: [PROVIDER_NAME[a.provider], a.project, a.tool].filter(Boolean).join(' · '), at: a.at, icon: iconFor(a.text, a.tool) })));
-  renderQueue([{ icon: 'i', title: '이 대시보드는 상태를 보여주기만 해요', detail: '작업은 연결된 도구에서 직접 맡겨 주세요.', tag: '안내' }]);
-  const input = $<HTMLInputElement>('#task-input');
-  input.disabled = true;
-  input.placeholder = 'Claude Code나 Codex에 직접 입력해 주세요';
-  $<HTMLButtonElement>('.send-btn').disabled = true;
+  renderActivity(snapshot.activity.map((a: ActivityItem) => ({
+    agent: a.agent,
+    text: a.text,
+    detail: [PROVIDER_NAME[a.provider], labels.get(projectIdentity(a)) ?? a.project].filter(Boolean).join(' · '),
+    at: a.at,
+    icon: iconFor(a.text, a.tool),
+    tool: a.tool,
+    provider: a.provider,
+    sourceId: a.sourceId,
+    projectId: projectIdentity(a),
+  })));
+  renderQueue([{ icon: 'i', title: '선택한 에이전트에 메시지를 보내세요', detail: '쉬는 세션을 CLI로 재개해요. 기존 권한 정책이 적용되고, 이 화면에서는 권한을 승인할 수 없어요.', tag: '안내' }]);
+  renderChatTargets();
 }
 
 async function poll() {
@@ -221,95 +341,116 @@ async function poll() {
   }
 }
 
-// ---------------- demo mode ----------------
-const demoStats: Stats = { tools: 42, turns: 6, events: 0 };
-const demoLog: { agent: string; text: string; detail: string; at: number; icon: string }[] = [];
-const demoQueue = [
-  { icon: '✍', title: '기능 소개 문서 정리', detail: '모모에게 배정 · 예상 5분', tag: '대기 중' },
-  { icon: '⌕', title: '사용 흐름 한번 살펴보기', detail: '토리에게 배정 · 예상 8분', tag: '준비 중', wait: true },
-];
-const DEMO_TOOLS = ['Edit', 'Read', 'Bash', 'Grep', 'WebSearch', 'Write'];
-const pick = <T,>(items: readonly T[]) => items[Math.floor(Math.random() * items.length)]!;
-let demoTimers: number[] = [];
-
-const DEMO_DEFAULTS: Record<string, { name: string; look: Look }> = {
-  momo: { name: '모모', look: 'momo' }, lumi: { name: '루미', look: 'lumi' }, tori: { name: '토리', look: 'tori' }, koko: { name: '코코', look: 'koko' }, helper: { name: 'Explore', look: 'bot' },
-};
-function demoProfile(agent: ViewAgent) {
-  const base = DEMO_DEFAULTS[agent.id] ?? { name: agent.baseName, look: agent.look };
-  const profile = profiles[agent.key] ?? {};
-  agent.name = profile.name || base.name;
-  agent.look = profile.look ?? base.look;
-  return agent;
-}
-function demoAgent(id: string, state: AgentState, tool: string, role: string, isSubagent = false): ViewAgent {
-  const base = DEMO_DEFAULTS[id]!;
-  return demoProfile({ id, key: `demo:${id}`, baseName: base.name, name: base.name, look: base.look, state, tool, isSubagent, role });
-}
-function demoAgents(): ViewAgent[] {
-  return [
-    demoAgent('momo', 'working', 'Edit', '문서 정리'),
-    demoAgent('lumi', 'break', '', '리서치'),
-    demoAgent('tori', 'working', 'Bash', '코드 리뷰'),
-    demoAgent('koko', 'waiting', '', '테스트 정리'),
-  ];
+// ---------------- agent chat ----------------
+function renderChatTargets() {
+  const select = $<HTMLSelectElement>('#chat-agent-select');
+  const targets = agents.filter(agent => !agent.isSubagent);
+  const signature = JSON.stringify(targets.map(agent => [agent.id, agent.name, agent.projectLabel]));
+  if (select.dataset.options !== signature) {
+    const previous = chatAgentId;
+    select.replaceChildren(new Option('에이전트를 선택해 주세요', ''), ...targets.map(agent =>
+      new Option(`${agent.name} · ${agent.provider ? PROVIDER_NAME[agent.provider] : ''} · ${agent.projectLabel ?? agent.role}`, agent.id)));
+    select.dataset.options = signature;
+    chatAgentId = targets.some(agent => agent.id === previous) ? previous : '';
+  }
+  select.disabled = !targets.length;
+  select.value = chatAgentId;
+  updateChatControls();
 }
 
-function demoLogEntry(agent: ViewAgent, text: string) {
-  demoLog.unshift({ agent: agent.name, text, detail: [agent.role, agent.tool].filter(Boolean).join(' · '), at: Date.now(), icon: iconFor(text, agent.tool) });
-  demoLog.length = Math.min(demoLog.length, 6);
-  renderActivity(demoLog);
+function updateChatControls() {
+  const target = agents.find(agent => agent.id === chatAgentId && !agent.isSubagent);
+  const input = $<HTMLInputElement>('#chat-input');
+  const button = $<HTMLButtonElement>('#chat-form .send-btn');
+  const busy = Boolean(target && (target.state === 'working' || target.state === 'waiting'));
+  const pending = Boolean(target && chatPending.has(target.id));
+  input.disabled = !target || busy || pending;
+  button.disabled = !target || busy || pending;
+  $('#chat-status').textContent = !target
+    ? agents.some(agent => !agent.isSubagent) ? '메시지를 보낼 에이전트를 선택해 주세요.' : '훅 이벤트가 도착하면 실제 세션에 메시지를 보낼 수 있어요.'
+    : pending ? `${target.name}의 답변을 기다리고 있어요.`
+      : busy ? `${target.name}이 현재 작업 중이에요. 작업이 끝나면 메시지를 보낼 수 있어요.`
+        : `${target.name} 세션에 다음 메시지를 보낼 수 있어요.`;
 }
 
-function demoChange(agent: ViewAgent, state: AgentState, tool = '') {
-  agent.state = state;
-  agent.tool = tool;
-  if (tool) demoStats.tools += 1;
-  if (state === 'break') demoStats.turns += 1;
-  demoLogEntry(agent, state === 'working' ? `${tool} 사용 중` : state === 'break' ? '응답 완료, 잠깐 휴식' : state === 'waiting' ? '권한 확인 대기' : LABEL[state]);
-  render(demoStats);
+function renderChat(messages: ChatMessage[], agent: ViewAgent) {
+  const list = $('#chat-messages');
+  if (!messages.length) {
+    list.replaceChildren(el('div', 'activity-empty', `${agent.name}에게 보낸 메시지가 아직 없어요.`));
+    return;
+  }
+  list.replaceChildren(...messages.map(message => {
+    const row = el('div', `chat-message ${message.role}${message.status === 'sending' ? ' sending' : ''}${message.status === 'error' ? ' error' : ''}`);
+    const body = el('p', '', message.status === 'sending' ? '응답 생성 중…' : message.text);
+    const label = message.role === 'user' ? '나' : agent.name;
+    const status = message.status === 'sending' ? '응답 중' : message.status === 'error' ? '전달 실패' : ago(message.at);
+    row.append(body, el('small', '', `${label} · ${status}`));
+    return row;
+  }));
+  list.scrollTop = list.scrollHeight;
 }
 
-function startDemo() {
-  agents = demoAgents();
-  render(demoStats, true);
-  renderActivity(demoLog);
-  renderQueue(demoQueue);
-  demoTimers.push(window.setInterval(() => {
-    const people = agents.filter(a => !a.isSubagent);
-    const agent = pick(people);
-    if (agent.state === 'working') demoChange(agent, Math.random() < 0.25 ? 'waiting' : 'break');
-    else demoChange(agent, 'working', pick(DEMO_TOOLS));
-  }, 7000));
-  // now and then a helper robot comes in through the door, works for a while and leaves
-  demoTimers.push(window.setInterval(() => {
-    if (agents.some(a => a.isSubagent)) return;
-    const helper = demoAgent('helper', 'working', 'Grep', '서브에이전트', true);
-    agents = [...agents, helper];
-    demoChange(helper, 'working', 'Grep');
-    demoTimers.push(window.setTimeout(() => demoChange(helper, 'done'), 16000));
-    demoTimers.push(window.setTimeout(() => { agents = agents.filter(a => a !== helper); render(demoStats); }, 24000));
-  }, 30000));
+async function loadChatHistory(agentId: string): Promise<boolean> {
+  if (!agentId) {
+    $('#chat-messages').replaceChildren(el('div', 'activity-empty', '에이전트를 선택하면 대화 기록이 여기에 표시돼요.'));
+    updateChatControls();
+    return false;
+  }
+  try {
+    const response = await fetch(`/api/chat?agentId=${encodeURIComponent(agentId)}`, { cache: 'no-store' });
+    const body = await response.json() as { messages?: ChatMessage[]; error?: string };
+    if (!response.ok) throw new Error(body.error ?? '채팅 기록을 불러오지 못했어요.');
+    const messages = body.messages ?? [];
+    const agent = agents.find(item => item.id === agentId);
+    const pending = messages.some(message => message.status === 'sending');
+    if (pending) chatPending.add(agentId); else chatPending.delete(agentId);
+    if (agentId === chatAgentId && agent) renderChat(messages, agent);
+    updateChatControls();
+    if (agentId === chatAgentId) {
+      if (pending && !chatPollTimer) chatPollTimer = window.setInterval(() => void loadChatHistory(chatAgentId), 1200);
+      if (!pending && chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = 0; }
+    }
+    return pending;
+  } catch (error) {
+    if (agentId === chatAgentId) $('#chat-status').textContent = (error as Error).message;
+    return false;
+  }
 }
 
-function stopDemo() {
-  demoTimers.forEach(t => { clearInterval(t); clearTimeout(t); });
-  demoTimers = [];
-}
+$('#chat-agent-select').addEventListener('change', event => {
+  if (chatPollTimer) { clearInterval(chatPollTimer); chatPollTimer = 0; }
+  const id = (event.currentTarget as HTMLSelectElement).value;
+  chatAgentId = id;
+  const agent = agents.find(item => item.id === id);
+  if (agent) { selected = id; office.select(id); renderSidebar(); }
+  void loadChatHistory(id);
+  updateChatControls();
+});
 
-$('#task-form').addEventListener('submit', event => {
+$('#chat-form').addEventListener('submit', async event => {
   event.preventDefault();
-  if (live) return;
-  const input = $<HTMLInputElement>('#task-input');
-  const title = input.value.trim();
-  if (!title) { input.focus(); return; }
-  const agent = agents.find(a => !a.isSubagent && a.state === 'break') ?? agents.find(a => !a.isSubagent && a.state !== 'working');
-  if (!agent) { toast('지금은 모두 일하는 중이에요. 잠시 후 다시 맡겨 주세요.'); return; }
-  demoQueue.unshift({ icon: '✦', title, detail: `${agent.name}에게 배정 · 방금 추가`, tag: '진행 중' });
-  renderQueue(demoQueue);
-  demoChange(agent, 'working', 'Edit');
-  input.value = '';
-  toast(`${agent.name}에게 맡겼어요 (데모)`);
+  const target = agents.find(agent => agent.id === chatAgentId && !agent.isSubagent);
+  const input = $<HTMLInputElement>('#chat-input');
+  const message = input.value.trim();
+  if (!target || !message || target.state === 'working' || target.state === 'waiting' || chatPending.has(target.id)) return;
+  const targetId = target.id;
+  chatPending.add(targetId);
+  updateChatControls();
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agentId: targetId, text: message }),
+    });
+    const body = await response.json() as { error?: string };
+    if (!response.ok) throw new Error(body.error ?? '메시지를 보내지 못했어요.');
+    if (chatAgentId === targetId) input.value = '';
+    await loadChatHistory(targetId);
+  } catch (error) {
+    chatPending.delete(targetId);
+    toast((error as Error).message);
+    updateChatControls();
+  }
 });
 
 // ---------------- tool connections ----------------
@@ -395,16 +536,16 @@ function openRename(agent: ViewAgent) {
     label.append(radio, face);
     return label;
   }));
-  $('#rename-note').textContent = agent.key.startsWith('main:') ? `"${agent.key.slice(5)}" 폴더에서 연 세션에 계속 적용돼요.`
-    : agent.key.startsWith('sub:') ? `${agent.key.slice(4)} 서브에이전트에 계속 적용돼요.`
-    : '데모 캐릭터에 적용돼요.';
+  $('#rename-note').textContent = agent.isSubagent ? `${agent.role} 서브에이전트에 계속 적용돼요.`
+    : agent.projectLabel ? `"${agent.projectLabel}" 프로젝트 세션에 계속 적용돼요.`
+    : '이 세션 캐릭터에 계속 적용돼요.';
   dialog.showModal();
   nameInput.select();
 }
 
 function refresh() {
   if (live && lastSnapshot) applySnapshot(lastSnapshot);
-  else { agents.forEach(demoProfile); render(demoStats); }
+  else render({ tools: 0, turns: 0, events: 0 }, true);
 }
 
 dialog.addEventListener('close', () => {
@@ -442,7 +583,10 @@ $('#brand-mark').style.backgroundImage = `url(${propUrl('house')})`;
 
 updateClock();
 setInterval(updateClock, 30_000);
-startDemo();
+$('#live-text').textContent = '실제 이벤트 수신 대기';
+render({ tools: 0, turns: 0, events: 0 }, true);
+renderActivity([], false);
+renderQueue([{ icon: 'i', title: '실제 세션을 기다리고 있어요', detail: 'Claude Code 또는 Codex를 연결하고 CLI에서 세션을 시작해 주세요.', tag: '대기 중' }]);
 void loadSetups();
 poll();
 setInterval(poll, POLL_MS);

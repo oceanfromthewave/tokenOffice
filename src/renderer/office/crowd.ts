@@ -107,8 +107,8 @@ export class Crowd {
     const { state, isSubagent } = w.agent;
     if (isSubagent && state === 'done') return null; // finished helpers head out
     if (w.desk < 0) return OVERFLOW[w.spare] ?? OVERFLOW[OVERFLOW.length - 1]!; // ponytail: >12 agents share the last spot
-    const atDesk = state === 'working' || state === 'waiting' || state === 'error';
-    return atDesk ? DESKS[w.desk]! : LOUNGE[w.desk]!;
+    // Main agents keep their own desk while idle or completed; only active subagents leave when done.
+    return DESKS[w.desk]!;
   }
 
   private send(w: Walker, goal: Spot | null, instant: boolean) {
