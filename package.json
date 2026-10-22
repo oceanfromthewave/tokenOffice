@@ -1,6 +1,6 @@
 {
   "name": "token-office",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "main": "out/main/main.js",
@@ -13,7 +13,7 @@
     "test": "node --test \"src/**/*.test.ts\"",
     "start": "npm run build && node out/server/server.js",
     "app": "npm run build && electron .",
-    "dist": "npm run typecheck && npm test && npm run build && electron-builder",
+    "dist": "npm run typecheck && npm test && npm run build && electron-builder --publish never",
     "icon": "node tools/make-icon.ts"
   },
   "build": {
@@ -30,8 +30,16 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
-    }
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "oceanfromthewave",
+        "repo": "tokenOffice"
+      }
+    ]
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
@@ -39,5 +47,12 @@
     "electron-builder": "^26.15.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.5"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oceanfromthewave/tokenOffice.git"
   }
 }

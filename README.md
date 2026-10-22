@@ -11,7 +11,9 @@ npm install
 npm run dist
 ```
 
-Then run `dist/tokenOffice Setup <version>.exe`. The app lives in the tray. Closing the window keeps it running, so it keeps receiving events. Quit it from the tray menu, where you can also turn on starting with Windows.
+Then run `dist/tokenOffice-Setup-<version>.exe`, or download it from [Releases](https://github.com/oceanfromthewave/tokenOffice/releases). The app lives in the tray. Closing the window keeps it running, so it keeps receiving events. Quit it from the tray menu, where you can also turn on starting with Windows.
+
+From 0.2.1 the app updates itself. It checks GitHub Releases at start and every six hours, and downloads new versions in the background. A tray notice says when one is ready; it installs when you restart from the tray menu or the next time the app quits. Use "업데이트 확인" in the tray menu to check right away. The installer is not code-signed, so Windows SmartScreen may warn on first install.
 
 ## Connect Claude Code
 
@@ -42,6 +44,8 @@ The hook is async and best-effort, so a closed dashboard never slows Claude Code
 | `npm run typecheck` | Type-check the renderer and the Node side |
 | `npm run dist` | Typecheck, test, build and package the Windows installer |
 | `npm run icon` | Redraw `build/icon.png` and the favicon from the pixel art |
+
+To release, bump `version` in `package.json` and run `npm run dist`. Then create a GitHub release tagged `v<version>` and attach three files from `dist/`: the installer `.exe`, its `.blockmap` and `latest.yml`. Installed apps find the new version through `latest.yml`.
 
 If the installed app is running, it owns port 47821. To run another copy side by side, set `TOKEN_OFFICE_PORT` first (PowerShell: `$env:TOKEN_OFFICE_PORT=47900; npm start`). Hook events still go to 47821.
 
