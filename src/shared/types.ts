@@ -18,6 +18,8 @@ export interface AgentRecord {
   isSubagent: boolean;
   /** True until a new hook event confirms this restored roster entry is live again. */
   restored?: boolean;
+  /** The CLI process is currently open, but its hooks have not confirmed current activity yet. */
+  cliOpen?: boolean;
   startedAt: number;
   updatedAt: number;
 }

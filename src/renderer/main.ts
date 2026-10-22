@@ -5,7 +5,7 @@ import { Office, type OfficeAgent } from './office/office.ts';
 import { headUrl, propUrl } from './office/sprites.ts';
 
 /** `key` names whoever this is across sessions (project for a session, type for a subagent) so a rename sticks. */
-interface ViewAgent extends OfficeAgent { role: string; key: string; baseName: string; projectLabel?: string; provider?: Provider; sessionId: string; restored: boolean; updatedAt: number }
+interface ViewAgent extends OfficeAgent { role: string; key: string; baseName: string; projectLabel?: string; provider?: Provider; sessionId: string; restored: boolean; cliOpen: boolean; updatedAt: number }
 interface Stats { tools: number; turns: number; events: number }
 interface ActivityRow {
   agent: string;
@@ -101,7 +101,7 @@ function renderSidebar() {
     const avatar = el('span', `mini-avatar${a.state === 'working' || a.meeting ? ' online' : ''}`);
     avatar.style.backgroundImage = `url(${headUrl(a.look)})`;
     const meta = el('span', 'agent-meta');
-    const status = a.restored ? `복원됨 · ${ago(a.updatedAt)}` : `${a.meeting ? '회의 중' : LABEL[a.state]} · ${a.role}`;
+    const status = a.cliOpen ? 'CLI 실행 중 · 훅 대기' : a.restored ? `복원됨 · ${ago(a.updatedAt)}` : `${a.meeting ? '회의 중' : LABEL[a.state]} · ${a.role}`;
     meta.append(el('strong', '', a.name), el('small', '', status));
     pick.append(avatar, meta);
     pick.addEventListener('click', () => select(a.id));
@@ -218,7 +218,7 @@ function renderMeetingParticipants() {
   const list = $('#meeting-agent-list');
   const targets = agents.filter(agent => !agent.isSubagent);
   const roomBusy = meetingRecords.some(meeting => meeting.status === 'running');
-  const signature = JSON.stringify([roomBusy, targets.map(agent => [agent.id, agent.name, agent.state, agent.provider, agent.restored, agent.meeting])]);
+  const signature = JSON.stringify([roomBusy, targets.map(agent => [agent.id, agent.name, agent.state, agent.provider, agent.restored, agent.cliOpen, agent.meeting])]);
   if (list.dataset.options === signature) { renderMeetingControls(); return; }
   list.dataset.options = signature;
   for (const id of meetingSelection) if (!targets.some(agent => agent.id === id)) meetingSelection.delete(id);
@@ -238,7 +238,7 @@ function renderMeetingParticipants() {
       renderMeetingControls();
     });
     const copy = el('span');
-    const status = agent.restored ? '복원됨 · 연결 대기' : agent.meeting ? '회의 중' : `${LABEL[agent.state]} · ${agent.provider ? PROVIDER_NAME[agent.provider] : ''}`;
+    const status = agent.cliOpen ? 'CLI 실행 중 · 훅 대기' : agent.restored ? '복원됨 · 연결 대기' : agent.meeting ? '회의 중' : `${LABEL[agent.state]} · ${agent.provider ? PROVIDER_NAME[agent.provider] : ''}`;
     copy.append(el('strong', '', agent.name), el('small', '', status));
     label.append(checkbox, copy);
     return label;
@@ -298,7 +298,7 @@ function select(id: string) {
   }
   renderSidebar();
   renderAgentSummary();
-  toast(`${agent.name} · ${agent.restored ? '복원됨' : agent.meeting ? '회의 중' : LABEL[agent.state]}${agent.tool ? ` · ${agent.tool}` : ''}`);
+  toast(`${agent.name} · ${agent.cliOpen ? 'CLI 실행 중 · 훅 대기' : agent.restored ? '복원됨' : agent.meeting ? '회의 중' : LABEL[agent.state]}${agent.tool ? ` · ${agent.tool}` : ''}`);
 }
 
 let toastTimer = 0;
@@ -361,8 +361,6 @@ const ago = (at: number) => {
 const iconFor = (text: string, tool: string) => (tool ? '⌘' : text.includes('완료') ? '✓' : text.includes('대기') ? '!' : text.includes('오류') ? '×' : '✦');
 
 // ---------------- live mode ----------------
-const looks = new Map<string, Look>();
-let nextLook = 0;
 // New sessions get a friendly random name instead of the folder name; it sticks for the life of the session.
 const PERSON_NAMES = ['하루', '보리', '단비', '누리', '미르', '솔이', '나래', '다온', '가람', '소담', '라온', '별하', '지오', '해솔', '윤슬', '도담'];
 const ROBOT_NAMES = ['삐삐', '뚝딱', '볼트', '너트', '깡통', '반짝', '찌릿', '또롱', '덜컹', '빙글'];
@@ -389,6 +387,17 @@ function projectIdentity(record: Pick<AgentRecord, 'project' | 'projectParent' |
   return record.projectId || [record.projectParent, record.project].filter(Boolean).join('/') || record.project;
 }
 
+function defaultLook(key: string): Look {
+  // A project's default character must survive a new CLI session and roster reordering.
+  // Hashing the stable profile key avoids assigning looks by the transient session ID.
+  let hash = 2166136261;
+  for (let index = 0; index < key.length; index++) {
+    hash ^= key.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return LOOKS[(hash >>> 0) % LOOKS.length]!;
+}
+
 function rememberProjects(snapshot: Snapshot) {
   for (const item of [...snapshot.agents, ...snapshot.activity]) {
     if (!item.project) continue;
@@ -401,7 +410,6 @@ function fromRecords(records: AgentRecord[], labels: Map<string, string>): ViewA
   const taken = new Set(records.map(r => autoNames.get(r.id)).filter((n): n is string => Boolean(n)));
   const seen = new Map<string, number>();
   return records.map(r => {
-    if (!looks.has(r.id)) looks.set(r.id, r.isSubagent ? 'bot' : LOOKS[nextLook++ % LOOKS.length]!);
     const projectId = projectIdentity(r);
     const key = r.isSubagent
       ? r.provider === 'claude' ? `sub:${r.agentType || r.name}` : `codex:sub:${r.agentType || r.name}`
@@ -422,11 +430,12 @@ function fromRecords(records: AgentRecord[], labels: Map<string, string>): ViewA
       baseName: generated,
       projectLabel,
       name: count > 1 ? `${name} ${count}` : name,
-      look: profile.look ?? looks.get(r.id)!,
+      look: profile.look ?? (r.isSubagent ? 'bot' : defaultLook(key)),
       state: r.state,
       tool: r.tool,
       isSubagent: r.isSubagent,
       restored: Boolean(r.restored),
+      cliOpen: Boolean(r.cliOpen),
       updatedAt: r.updatedAt,
       // the folder (or the subagent's type) still shows under the name
       role: [PROVIDER_NAME[r.provider], r.isSubagent ? r.agentType || '서브에이전트' : projectLabel, r.tool].filter(Boolean).join(' · '),
@@ -447,7 +456,7 @@ function renderAgentSummary() {
   const identity = el('div', 'agent-summary-identity');
   identity.append(el('strong', '', agent.name), el('small', '', `${agent.provider ? PROVIDER_NAME[agent.provider] : ''} · ${agent.projectLabel ?? agent.role}`));
   head.append(identity, el('span', `agent-state-tag${agent.restored ? ' restored' : agent.state === 'error' || agent.state === 'waiting' ? ' alert' : ''}`,
-    agent.restored ? `복원됨 · ${ago(agent.updatedAt)}` : agent.meeting ? '회의 중' : LABEL[agent.state]));
+    agent.cliOpen ? 'CLI 실행 중 · 훅 대기' : agent.restored ? `복원됨 · ${ago(agent.updatedAt)}` : agent.meeting ? '회의 중' : LABEL[agent.state]));
 
   const summaries = el('div', 'agent-summary-stats');
   const addStat = (title: string, item?: ActivityRow) => {
@@ -491,7 +500,7 @@ function applySnapshot(snapshot: Snapshot) {
   pill.classList.toggle('recent', latestEvent > 0 && Date.now() - latestEvent < 60_000);
   const sourceNames = [...new Set([...snapshot.providers, ...agents.map(agent => agent.provider).filter((value): value is Provider => Boolean(value))])].map(provider => PROVIDER_NAME[provider]).join(' + ') || '연동 도구';
   $('#hero-text').textContent = agents.some(agent => agent.restored)
-    ? `저장된 세션 ${agents.filter(agent => agent.restored).length}개를 복원했어요. 새 훅 이벤트가 오면 연결 상태를 확인해요.`
+    ? `저장되었거나 실행 중인 세션 ${agents.filter(agent => agent.restored).length}개를 찾았어요. 새 훅 이벤트가 오면 상태를 동기화해요.`
     : agents.length ? `${sourceNames} 세션의 실제 상태를 보여주고 있어요.` : `${sourceNames}의 새 이벤트를 기다리고 있어요. 마지막 이벤트는 ${latestEvent ? ago(latestEvent) : '아직 없어요'}.`;
   render(snapshot.metrics, first);
   renderActivity(snapshot.activity.map((a: ActivityItem) => ({
@@ -571,6 +580,7 @@ function updateChatControls() {
     : pending ? `${target.name}의 답변을 기다리고 있어요.`
       : target.meeting ? `${target.name}이 회의 중이에요. 회의가 끝나면 채팅할 수 있어요.`
         : busy ? `${target.name}이 현재 작업 중이에요. 작업이 끝나면 메시지를 보낼 수 있어요.`
+        : target.cliOpen ? `${target.provider ? PROVIDER_NAME[target.provider] : 'CLI'}에서 실행 중인 세션을 찾았어요. 새 훅 이벤트가 오면 상태가 동기화돼요.`
         : target.restored ? `복원된 세션이에요. 메시지를 보내면 ${target.provider ? PROVIDER_NAME[target.provider] : 'CLI'}에서 다시 연결을 시도해요.`
           : `${target.name} 세션에 다음 메시지를 보낼 수 있어요.`;
 }

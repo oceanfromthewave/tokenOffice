@@ -12,8 +12,11 @@ async function executable(name: string): Promise<Executable> {
   if (process.platform !== 'win32') return { command: name, prefix: [] };
   let path: string;
   try {
-    // PowerShell emits a UTF-16 path as base64 so non-ASCII Windows profile names survive pipes.
-    const script = `$ErrorActionPreference = 'Stop'; $command = Get-Command -Name '${name}' -ErrorAction Stop | Where-Object { $_.CommandType -in @('Application', 'ExternalScript') } | Select-Object -First 1; if ($null -eq $command -or -not $command.Source) { exit 2 }; [Console]::Write([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes([string]$command.Source)))`;
+    // Prefer the .cmd shim over a same-name .ps1 shim. Windows PowerShell pipes
+    // strings to native programs using its default ASCII $OutputEncoding, which
+    // turns Korean prompts into question marks in npm's generated .ps1 wrapper.
+    // PowerShell emits the path as UTF-16 base64 so non-ASCII profile names survive.
+    const script = `$ErrorActionPreference = 'Stop'; $command = Get-Command -Name '${name}.cmd' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1; if ($null -eq $command) { $command = Get-Command -Name '${name}' -CommandType Application -ErrorAction Stop | Select-Object -First 1 }; if ($null -eq $command -or -not $command.Source) { exit 2 }; [Console]::Write([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes([string]$command.Source)))`;
     const { stdout } = await execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 3000, windowsHide: true });
     path = Buffer.from(String(stdout).trim(), 'base64').toString('utf16le').trim();
   } catch {
@@ -40,16 +43,20 @@ function codexFinalMessage(output: string): string {
   return final.trim();
 }
 
-/** Continue an idle Claude Code or Codex CLI session without placing the prompt in process arguments. */
-export async function sendToAgent(target: Target, prompt: string): Promise<string> {
-  if (!target.cwd) throw new Error('프로젝트 경로를 받은 적이 없어 이 세션을 재개할 수 없어요. 해당 CLI에서 세션을 한 번 더 실행해 주세요.');
-  if (!UUID.test(target.sessionId)) throw new Error('세션 ID 형식이 올바르지 않아 재개할 수 없어요.');
+/** Send a prompt without putting its text in process arguments. Meetings use a fresh, non-persistent context. */
+export async function sendToAgent(target: Target, prompt: string, options: { freshSession?: boolean } = {}): Promise<string> {
+  if (!target.cwd) throw new Error('프로젝트 경로를 받은 적이 없어 CLI를 시작할 수 없어요. 해당 CLI에서 세션을 한 번 더 실행해 주세요.');
+  if (!options.freshSession && !UUID.test(target.sessionId)) throw new Error('세션 ID 형식이 올바르지 않아 재개할 수 없어요.');
 
   const name = target.provider === 'claude' ? 'claude' : 'codex';
   const cli = await executable(name);
   const args = target.provider === 'claude'
-    ? ['--print', '--resume', target.sessionId, '--input-format', 'text', '--output-format', 'text']
-    : ['exec', 'resume', target.sessionId, '-', '--json'];
+    ? options.freshSession
+      ? ['--print', '--no-session-persistence', '--input-format', 'text', '--output-format', 'text', '--tools', '', '--strict-mcp-config']
+      : ['--print', '--resume', target.sessionId, '--input-format', 'text', '--output-format', 'text']
+    : options.freshSession
+      ? ['exec', '--ephemeral', '--sandbox', 'read-only', '--json', '-']
+      : ['exec', 'resume', target.sessionId, '-', '--json'];
 
   return await new Promise<string>((resolve, reject) => {
     const child = spawn(cli.command, [...cli.prefix, ...args], {

@@ -2,6 +2,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { ActivityItem, AgentRecord, ChatMessage, HookEvent, Provider, Snapshot } from '../shared/types.ts';
+import type { DiscoveredSession } from './session-discovery.ts';
 
 const ACTIVITY_LIMIT = 200;
 const STALE_MS = 4 * 60 * 60 * 1000;
@@ -79,6 +80,38 @@ export class OfficeState {
         .slice(0, ACTIVITY_LIMIT);
     }
     if (discarded || records.agents.length > candidates.length) this.schedulePersist();
+  }
+
+  /** Adds sessions found in the currently-running CLI processes before their next hook event. */
+  restoreOpenSessions(sessions: DiscoveredSession[]) {
+    let changed = false;
+    for (const session of sessions) {
+      const id = `${session.provider}:${session.sessionId}:main`;
+      const existing = this.agents.get(id);
+      if (existing) {
+        this.agents.set(id, {
+          ...existing,
+          state: session.state,
+          restored: true,
+          cliOpen: true,
+          startedAt: Math.min(existing.startedAt, session.startedAt),
+          updatedAt: Math.max(existing.updatedAt, session.updatedAt),
+        });
+      } else {
+        this.agents.set(id, {
+          id, provider: session.provider, sessionId: session.sessionId, agentId: '',
+          name: session.project, project: session.project, projectParent: session.projectParent,
+          projectId: session.projectId, agentType: '', state: session.state, tool: '', isSubagent: false,
+          restored: true, cliOpen: true, startedAt: session.startedAt, updatedAt: session.updatedAt,
+        });
+        changed = true;
+      }
+      if (this.projectPaths.get(id) !== session.cwd) {
+        this.projectPaths.set(id, session.cwd);
+        changed = true;
+      }
+    }
+    if (changed) this.schedulePersist();
   }
 
   exportBackup() {
@@ -166,7 +199,7 @@ export class OfficeState {
           this.agents.delete(id);
           this.projectPaths.delete(id);
         } else {
-          this.agents.set(id, { ...agent, state: 'break', tool: '', restored: false, updatedAt: now });
+          this.agents.set(id, { ...agent, state: 'break', tool: '', restored: false, cliOpen: false, updatedAt: now });
         }
       }
       this.schedulePersist();

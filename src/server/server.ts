@@ -5,6 +5,7 @@ import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { AgentMeeting, MeetingTurn } from '../shared/types.ts';
 import { sendToAgent } from './agentchat.ts';
+import { discoverOpenSessions } from './session-discovery.ts';
 import { connectHooks, disconnectHooks, setupStatus } from './hooksetup.ts';
 import { codexSetupStatus, connectCodexHooks, disconnectCodexHooks } from './codex-hooksetup.ts';
 import { OfficeState } from './state.ts';
@@ -75,7 +76,9 @@ async function runMeeting(
         '한국어로 1~3개 짧은 문단으로 답하세요. 앞선 의견을 검토하고, 필요하면 보완하거나 다른 견해를 제시하세요. 마지막에 실행할 다음 단계를 제안하세요.',
       ].join('\n\n');
       try {
-        turn.text = await sendToAgent(entry.target, prompt);
+        // Each speaker gets only the agenda and earlier replies. Resuming the
+        // saved session can collide with a live Codex writer or pull in unrelated history.
+        turn.text = await sendToAgent(entry.target, prompt, { freshSession: true });
         turn.state = 'complete';
       } catch (error) {
         turn.text = (error as Error).message || 'CLI 응답을 받지 못했어요.';
@@ -107,7 +110,10 @@ async function serveStatic(pathname: string, response: ServerResponse) {
 
 export function startServer(port = Number(process.env.TOKEN_OFFICE_PORT) || DEFAULT_PORT, persistencePath?: string): Promise<Server> {
   const office = new OfficeState(persistencePath);
-  const restoring = office.restore();
+  const restoring = office.restore().then(async () => {
+    try { office.restoreOpenSessions(await discoverOpenSessions()); }
+    catch (error) { console.warn(`Could not discover open CLI sessions: ${(error as Error).message}`); }
+  });
   const pendingChats = new Set<string>();
   const meetingAgentIds = new Set<string>();
   const meetings: AgentMeeting[] = [];
@@ -152,7 +158,7 @@ export function startServer(port = Number(process.env.TOKEN_OFFICE_PORT) || DEFA
           if (target.state === 'working' || target.state === 'waiting' || meetingAgentIds.has(id) || pendingChats.has(id)) {
             return json(response, 409, { error: `${target.name}은 현재 작업 또는 다른 대화 중이에요.` });
           }
-          if (!target.cwd) return json(response, 409, { error: `${target.name}의 작업 경로가 없어 CLI 세션을 재개할 수 없어요.` });
+          if (!target.cwd) return json(response, 409, { error: `${target.name}의 작업 경로가 없어 CLI를 시작할 수 없어요.` });
           seen.add(id);
           const name = typeof item.name === 'string' ? item.name.trim().slice(0, 32) : '';
           entries.push({ id, name: name || target.name, target });
