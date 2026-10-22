@@ -1,0 +1,25 @@
+{
+  "name": "token-office",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "main.mjs",
+  "description": "Virtual office for watching Claude Code sessions",
+  "author": "oceanfromthewave",
+  "scripts": {
+    "start": "node server.mjs",
+    "app": "electron .",
+    "dist": "electron-builder"
+  },
+  "build": {
+    "appId": "com.oceanfromthewave.tokenoffice",
+    "productName": "tokenOffice",
+    "files": ["main.mjs", "server.mjs", "index.html", "styles.css", "app.js", "build/icon.png"],
+    "win": { "target": "nsis", "icon": "build/icon.png" },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+  },
+  "devDependencies": {
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3"
+  }
+}

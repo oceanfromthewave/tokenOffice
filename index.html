@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f6f2">
+  <title>tokenOffice — 에이전트들이 일하는 곳</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"><div class="brand-mark">🏡</div><div class="brand-name">token<span>Office</span></div></div>
+      <div class="workspace-label">Workspace</div>
+      <div class="workspace-select"><div class="workspace-icon">🌿</div><div class="workspace-info"><strong>토큰 연구소</strong><small>개인 워크스페이스</small></div><span class="chevron">⌄</span></div>
+      <div class="nav-label">WORKSPACE</div>
+      <a class="nav-item active" href="#office"><span class="nav-icon">▦</span>가상 사무실</a>
+      <a class="nav-item" href="#activity"><span class="nav-icon">◷</span>활동 로그<span class="count">12</span></a>
+      <a class="nav-item" href="#queue"><span class="nav-icon">☷</span>작업 큐<span class="count" id="queue-count">3</span></a>
+      <div class="section-row"><span>내 에이전트</span><button id="add-agent" aria-label="에이전트 추가" title="에이전트 추가">＋</button></div>
+      <div class="agent-list" id="agent-list"></div>
+      <div class="sidebar-bottom">
+        <div class="usage-card"><div class="usage-head"><span>오늘 토큰 사용량</span><strong>64%</strong></div><div class="usage-track"><span></span></div><div class="usage-note">이번 달 한도까지 18.4k 토큰 남음</div></div>
+        <div class="profile"><div class="profile-pic">🧑🏻‍💻</div><div><strong>재현님</strong><small>Pro 플랜</small></div><span class="dots">•••</span></div>
+      </div>
+    </aside>
+    <main class="main" id="office">
+      <header class="topbar"><div class="crumb"><button class="icon-btn mobile-menu" id="menu-button" aria-label="메뉴 열기">☰</button><span>토큰 연구소</span><span>›</span><strong>가상 사무실</strong></div><div class="top-actions"><div class="live-pill"><i class="live-dot"></i> 데모 모드</div><button class="ghost-btn" id="activity-button">◷ <span>활동 기록</span></button><button class="icon-btn" aria-label="알림" id="notice-button">♧</button><button class="icon-btn" aria-label="설정" id="settings-button">⚙</button></div></header>
+      <section class="hero"><div><div class="eyebrow" id="current-date">THURSDAY, OCTOBER 22</div><h1>안녕하세요, 재현님 👋</h1><p>오늘도 에이전트들이 각자의 자리에서 열심히 일하고 있어요.</p></div><div class="hero-controls"><span class="date-button" id="current-time">☀  09:41 AM</span></div></section>
+      <section class="summary" aria-label="오늘 요약">
+        <div class="stat-card"><div class="stat-icon green">🧑‍💻</div><div class="stat-copy"><span>활성 에이전트</span><strong id="active-count">2 / 4</strong><em>● Live</em></div></div>
+        <div class="stat-card"><div class="stat-icon gold">◉</div><div class="stat-copy"><span>오늘 사용한 토큰</span><strong id="token-total">24.8k</strong><em>+12%</em></div></div>
+        <div class="stat-card"><div class="stat-icon blue">✓</div><div class="stat-copy"><span>완료한 작업</span><strong id="done-count">18</strong><em>+4</em></div></div>
+        <div class="stat-card"><div class="stat-icon pink">☕</div><div class="stat-copy"><span>사무실 분위기</span><strong class="mood-label">평화로움</strong><em>☺</em></div></div>
+      </section>
+      <section class="office-card" aria-label="에이전트 가상 사무실">
+        <div class="office-head"><div class="office-title"><h2>🌱 오늘의 사무실</h2><span class="subtitle">에이전트들의 하루를 구경해보세요</span></div><div class="head-right"><span class="room-badge"><i></i> 모두 출근 중</span><button class="sound-btn" id="sound-button" title="소리 켜기" aria-label="소리 켜기">♫</button><button class="expand-btn" id="tour-button">둘러보기 ↗</button></div></div>
+        <div class="scene" id="scene">
+          <div class="window left"></div><div class="window right"></div><div class="pinboard">TODAY'S PLAN<span>make it happen ✦</span></div><div class="wall-shelf"><span class="shelf-plant">🪴</span></div><div class="wall-line"></div><div class="floor"></div><div class="sunbeam"></div><div class="rug"></div>
+          <div class="bookshelf"></div><div class="watercooler"></div><div class="plant-pot p1">🪴</div><div class="plant-pot p2">🌿</div><div class="plant-pot p3">🪴</div><div class="couch"></div>
+          <div class="workstation w1" data-agent="momo" data-state="working"><div class="status-chip">작업 중</div><div class="speech">✦</div><div class="character" data-look="momo"><span class="ear left"></span><span class="ear right"></span><span class="body"></span><span class="eye left"></span><span class="eye right"></span><span class="nose"></span><span class="cheek left"></span><span class="cheek right"></span><span class="arm left"></span><span class="arm right"></span><span class="foot left"></span><span class="foot right"></span><span class="name-tag">모모</span></div><span class="typing">tap tap...</span><div class="desk"><div class="desk-top"></div><div class="keyboard"></div><span class="mug">☕</span><span class="task-note">📝</span></div></div>
+          <div class="workstation w2" data-agent="lumi" data-state="break"><div class="status-chip">잠깐 휴식</div><div class="character" data-look="lumi"><span class="ear left"></span><span class="ear right"></span><span class="body"></span><span class="eye left"></span><span class="eye right"></span><span class="nose"></span><span class="cheek left"></span><span class="cheek right"></span><span class="arm left"></span><span class="arm right"></span><span class="foot left"></span><span class="foot right"></span><span class="name-tag">루미</span></div><span class="typing">tap tap...</span><div class="desk"><div class="desk-top"></div><div class="keyboard"></div><span class="mug">🍵</span><span class="task-note">📚</span></div></div>
+          <div class="workstation w3" data-agent="tori" data-state="working"><div class="status-chip">작업 중</div><div class="character" data-look="tori"><span class="ear left"></span><span class="ear right"></span><span class="body"></span><span class="eye left"></span><span class="eye right"></span><span class="nose"></span><span class="cheek left"></span><span class="cheek right"></span><span class="arm left"></span><span class="arm right"></span><span class="foot left"></span><span class="foot right"></span><span class="name-tag">토리</span></div><span class="typing">tap tap...</span><div class="desk"><div class="desk-top"></div><div class="keyboard"></div><span class="mug">🧋</span><span class="task-note">💡</span></div></div>
+          <div class="workstation w4" data-agent="koko" data-state="done"><div class="status-chip">작업 완료</div><div class="character" data-look="koko"><span class="ear left"></span><span class="ear right"></span><span class="body"></span><span class="eye left"></span><span class="eye right"></span><span class="nose"></span><span class="cheek left"></span><span class="cheek right"></span><span class="arm left"></span><span class="arm right"></span><span class="foot left"></span><span class="foot right"></span><span class="char-hat"></span><span class="name-tag">코코</span></div><span class="typing">tap tap...</span><div class="desk"><div class="desk-top"></div><div class="keyboard"></div><span class="mug">🪴</span><span class="task-note">✅</span></div></div>
+          <div class="coffee-table"></div><div class="empty-office" id="empty-office" hidden>Claude Code 세션을 기다리고 있어요</div>
+        </div>
+        <div class="scene-footer"><span>🏡 <strong>행복한 사무실</strong> · 오늘도 차근차근</span><span><i class="live-dot"></i> 방금 업데이트 <span class="keys">· 마지막 동기화 2초 전</span></span></div>
+      </section>
+      <section class="below-grid">
+        <div class="panel activity-panel" id="activity"><div class="panel-head"><h3>📌 방금 있었던 일</h3><a href="#activity" id="all-activity">모두 보기 →</a></div><div class="activity" id="activity-list">
+          <div class="activity-row"><div class="activity-icon">📝</div><div class="activity-text"><strong>모모</strong>가 README 초안을 작성하고 있어요<small>문서 정리 · tokenOffice 저장소</small></div><span class="activity-time">방금</span></div>
+          <div class="activity-row"><div class="activity-icon">☕</div><div class="activity-text"><strong>루미</strong>가 잠깐 쉬러 나갔어요<small>휴식 시간 · 2분째</small></div><span class="activity-time">3분 전</span></div>
+          <div class="activity-row"><div class="activity-icon">✓</div><div class="activity-text"><strong>코코</strong>가 테스트 케이스 4개를 정리했어요<small>코드 리뷰 · 1,240 토큰</small></div><span class="activity-time">8분 전</span></div>
+        </div></div>
+        <div class="panel queue-panel" id="queue"><div class="panel-head"><h3>📋 다음 할 일</h3><button id="add-task-button">+ 작업 추가</button></div><div id="queue-list"><div class="queue-item"><span class="queue-symbol">✍️</span><div class="queue-copy"><strong>기능 소개 문서 정리</strong><small>모모에게 배정 · 예상 5분</small></div><span class="queue-tag">대기 중</span></div><div class="queue-item"><span class="queue-symbol">🔎</span><div class="queue-copy"><strong>사용 흐름 한번 살펴보기</strong><small>토리에게 배정 · 예상 8분</small></div><span class="queue-tag wait">준비 중</span></div></div></div>
+      </section>
+      <form class="composer" id="task-form"><span class="composer-mark">✨</span><input id="task-input" type="text" placeholder="에이전트에게 시킬 일을 적어보세요..." autocomplete="off"><button class="send-btn" type="submit">보내기 ↑</button></form>
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status"></div>
+  <script src="./app.js" defer></script>
+</body>
+</html>
