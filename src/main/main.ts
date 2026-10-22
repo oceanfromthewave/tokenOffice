@@ -32,7 +32,8 @@ function buildMenu() {
     },
     { type: 'separator' },
     updateReady
-      ? { label: `재시작해서 ${updateReady}로 업데이트`, click: () => autoUpdater.quitAndInstall() }
+      // silent install (no wizard), then start the new version
+      ? { label: `재시작해서 ${updateReady}로 업데이트`, click: () => autoUpdater.quitAndInstall(true, true) }
       : { label: '업데이트 확인', enabled: app.isPackaged, click: () => checkForUpdates(true) },
     { label: `버전 ${app.getVersion()}`, enabled: false },
     { type: 'separator' },
