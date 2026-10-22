@@ -1,4 +1,5 @@
 import { execFile as execFileCallback, spawn } from 'node:child_process';
+import { StringDecoder } from 'node:string_decoder';
 import { promisify } from 'node:util';
 
 const execFile = promisify(execFileCallback);
@@ -16,7 +17,7 @@ async function executable(name: string): Promise<Executable> {
     // strings to native programs using its default ASCII $OutputEncoding, which
     // turns Korean prompts into question marks in npm's generated .ps1 wrapper.
     // PowerShell emits the path as UTF-16 base64 so non-ASCII profile names survive.
-    const script = `$ErrorActionPreference = 'Stop'; $command = Get-Command -Name '${name}.cmd' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1; if ($null -eq $command) { $command = Get-Command -Name '${name}' -CommandType Application -ErrorAction Stop | Select-Object -First 1 }; if ($null -eq $command -or -not $command.Source) { exit 2 }; [Console]::Write([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes([string]$command.Source)))`;
+    const script = `$ErrorActionPreference = 'Stop'; $command = Get-Command -Name '${name}.cmd' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1; if ($null -eq $command) { $command = Get-Command -Name '${name}' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1 }; if ($null -eq $command) { $candidates = @(); if ($env:APPDATA) { $candidates += Join-Path $env:APPDATA 'npm\\${name}.cmd' }; if ('${name}' -eq 'codex' -and $env:LOCALAPPDATA) { $candidates += Join-Path $env:LOCALAPPDATA 'Programs\\OpenAI\\Codex\\bin\\codex.exe' }; foreach ($candidate in $candidates) { if (Test-Path -LiteralPath $candidate -PathType Leaf) { $command = [pscustomobject]@{ Source = $candidate }; break } } }; if ($null -eq $command -or -not $command.Source) { exit 2 }; [Console]::Write([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes([string]$command.Source)))`;
     const { stdout } = await execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 3000, windowsHide: true });
     path = Buffer.from(String(stdout).trim(), 'base64').toString('utf16le').trim();
   } catch {
@@ -67,13 +68,15 @@ export async function sendToAgent(target: Target, prompt: string, options: { fre
     let stdout = '';
     let stderr = '';
     let finished = false;
+    const stdoutDecoder = new StringDecoder('utf8');
+    const stderrDecoder = new StringDecoder('utf8');
     const timeout = setTimeout(() => {
       finished = true;
       child.kill();
       reject(new Error('응답이 10분 안에 끝나지 않아 중단했어요.'));
     }, 10 * 60 * 1000);
-    const collect = (current: string, chunk: Buffer) => {
-      const value = current + chunk.toString('utf8');
+    const collect = (current: string, chunk: string) => {
+      const value = current + chunk;
       if (value.length > OUTPUT_LIMIT) {
         finished = true;
         child.kill();
@@ -83,8 +86,8 @@ export async function sendToAgent(target: Target, prompt: string, options: { fre
       }
       return value;
     };
-    child.stdout.on('data', (chunk: Buffer) => { stdout = collect(stdout, chunk); });
-    child.stderr.on('data', (chunk: Buffer) => { stderr = collect(stderr, chunk); });
+    child.stdout.on('data', (chunk: Buffer) => { stdout = collect(stdout, stdoutDecoder.write(chunk)); });
+    child.stderr.on('data', (chunk: Buffer) => { stderr = collect(stderr, stderrDecoder.write(chunk)); });
     child.once('error', error => {
       if (finished) return;
       finished = true;
@@ -93,10 +96,17 @@ export async function sendToAgent(target: Target, prompt: string, options: { fre
     });
     child.once('close', code => {
       if (finished) return;
+      stdout = collect(stdout, stdoutDecoder.end());
+      stderr = collect(stderr, stderrDecoder.end());
+      if (finished) return;
       finished = true;
       clearTimeout(timeout);
       if (code !== 0) {
         const detail = String(stderr).trim().slice(-500);
+        if (target.provider === 'codex' && /missing field [`']base_instructions[`']/.test(detail)) {
+          reject(new Error('Codex CLI가 공유 모델 캐시와 호환되지 않아요. Codex CLI를 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.'));
+          return;
+        }
         reject(new Error(detail || `${name} CLI가 오류 코드 ${code ?? 'unknown'}로 끝났어요.`));
         return;
       }

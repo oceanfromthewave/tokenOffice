@@ -35,6 +35,8 @@ Press "Codex 연결하기" in the app or tick "Codex 연결" in the tray menu. T
 
 Codex requires you to review and trust a new or changed hook before it runs. After connecting, run `/hooks` in Codex CLI, then review and trust the tokenOffice hooks. New Codex sessions appear after that. The hook runs with Node.js, so `node` must be on your PATH.
 
+For meetings, tokenOffice starts a fresh Codex CLI process. If it reports that it cannot find `codex`, install or update the standalone CLI with `npm install -g @openai/codex@latest`, then restart tokenOffice. tokenOffice prefers the npm `codex.cmd` shim when available. Updating also helps when an older CLI cannot read a model cache written by a newer Codex desktop app.
+
 ## Use
 
 - Click a worker, in the office or the sidebar, to see what they are doing.
