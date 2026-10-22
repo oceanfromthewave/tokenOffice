@@ -1,9 +1,9 @@
-// The office scene: a 240x140 pixel world drawn on a canvas and scaled up by whole numbers so it stays crisp.
+// The office scene: a 320x140 pixel world drawn on a canvas and scaled up by whole numbers so it stays crisp.
 // Everything that stands on the floor is depth-sorted by where its feet/base are, so people pass in front of
 // and behind furniture correctly. People walk A* routes on a 2px grid and never cut through furniture.
 import { iconForTool, shirtColor, type Pose, type PropName } from '../../shared/pixels.ts';
 import { Crowd, type OfficeAgent, type Walker } from './crowd.ts';
-import { DESKS, DOOR, FLOOR_Y, LOUNGE, SOFA, WORLD_H, WORLD_W } from './layout.ts';
+import { DESKS, DOOR, FLOOR_Y, LOUNGE, SOFA, VENDING_SPOT, WORLD_H, WORLD_W } from './layout.ts';
 import { iconCanvas, propCanvas, workerCanvas } from './sprites.ts';
 
 export type { OfficeAgent };
@@ -134,7 +134,7 @@ export class Office {
 
   private drawWalker(g: Ctx, w: Walker) {
     const walking = w.route.length > 0;
-    const seatedAtDesk = !walking && w.at?.kind === 'desk';
+    const seatedAtDesk = !walking && (w.at?.kind === 'desk' || w.at?.kind === 'meeting');
     let pose: Pose = 'idle';
     let bob = 0;
     if (walking) {
@@ -148,9 +148,12 @@ export class Office {
   }
 
   private drawBubble(g: Ctx, w: Walker) {
-    if (w.route.length || w.at?.kind !== 'desk') return;
+    if (w.route.length) return;
     const { state, tool } = w.agent;
-    const style = state === 'waiting' ? { bg: '#ffd166', ink: '#241c33', icon: 'alert' as const }
+    const vending = w.restStage === 'vending' && w.at === VENDING_SPOT;
+    if (w.at?.kind !== 'desk' && w.at?.kind !== 'meeting' && !vending) return;
+    const style = vending ? { bg: '#ffd166', ink: '#241c33', icon: 'tool' as const }
+      : state === 'waiting' ? { bg: '#ffd166', ink: '#241c33', icon: 'alert' as const }
       : state === 'error' ? { bg: '#ff6b6b', ink: '#f4f6ff', icon: 'error' as const }
       : state === 'working' ? { bg: '#f4f6ff', ink: '#241c33', icon: iconForTool(tool) }
       : null;
@@ -186,9 +189,10 @@ export class Office {
     const signBox = { x0: 168, x1: 198, y0: 130, y1: 138 };
     const inFront = [...this.crowd.walkers.values()].some(w => w.x + 8 > signBox.x0 && w.x - 8 < signBox.x1 && w.y > signBox.y0 && w.y - 23 < signBox.y1);
     if (!inFront) label('휴게실', 183, 138, '#5a4d92');
+    label('회의실', 255, 134, '#3b6c78');
     for (const w of this.crowd.walkers.values()) {
       // the middle sofa seat lifts its tag so three people sitting together stay readable
-      const lift = w.at === LOUNGE[1] && !w.route.length ? 4 : 0;
+      const lift = (w.at === LOUNGE[1] || w.at === LOUNGE[4]) && !w.route.length ? 4 : 0;
       label(w.agent.name, w.x, w.y - 25 - lift, w.agent.id === this.selected ? '#ffbf69' : '#3a4272');
     }
   }
@@ -228,8 +232,11 @@ export class Office {
     rect(g, 151, 14, 11, 2, '#1d4b3a'); rect(g, 152, 14, 9, 1, '#5fe39a');
     rect(g, 149, 45, 15, 3, '#7a4a3a'); rect(g, 150, 46, 13, 1, '#a86a4a');
     // lounge rug
-    rect(g, 168, 95, 70, 44, '#5a4d92');
-    for (let y = 96; y < 138; y += 4) for (let x = 169; x < 237; x += 4) rect(g, x, y, 4, 4, ((x + y) / 4) % 2 < 1 ? '#3e3566' : '#463c74');
+    rect(g, 168, 80, 70, 59, '#5a4d92');
+    for (let y = 81; y < 138; y += 4) for (let x = 169; x < 237; x += 4) rect(g, x, y, 4, 4, ((x + y) / 4) % 2 < 1 ? '#3e3566' : '#463c74');
+    // a separate conference room with a blue tiled floor
+    rect(g, 249, 88, 64, 44, '#34475f');
+    for (let y = 89; y < 132; y += 6) for (let x = 250; x < 313; x += 6) rect(g, x, y, 6, 6, ((x + y) / 6) % 2 < 1 ? '#3b536d' : '#405a73');
     g.restore();
   }
 
@@ -315,8 +322,8 @@ export class Office {
       rect(g, 4, 38 - paper, 6, paper, '#f4f6ff');
     });
     add(78, g => { // water cooler
-      rect(g, 171, 52, 7, 7, '#8fd6e0'); rect(g, 172, 53, 1, 4, '#d7f4f7');
-      rect(g, 170, 59, 9, 19, '#b9c9ee'); rect(g, 177, 59, 2, 19, '#8d9dcc'); rect(g, 173, 64, 3, 2, '#5367a0');
+      rect(g, 167, 52, 7, 7, '#8fd6e0'); rect(g, 168, 53, 1, 4, '#d7f4f7');
+      rect(g, 166, 59, 9, 19, '#b9c9ee'); rect(g, 173, 59, 2, 19, '#8d9dcc'); rect(g, 169, 64, 3, 2, '#5367a0');
     });
     add(78, g => { // vending machine
       rect(g, 222, 52, 15, 26, '#2a3160'); rect(g, 223, 53, 13, 24, '#5b6fb5');
@@ -324,6 +331,22 @@ export class Office {
       ['#e25555', '#ffd166', '#5fe3d0'].forEach((c, i) => { for (let r = 0; r < 3; r++) rect(g, 225 + i * 3, 55 + r * 4, 2, 3, c); });
       const blink = Math.floor(performance.now() / 700) % 2;
       rect(g, 234, 56, 1, 1, blink ? '#ffd166' : '#8a6a2a'); rect(g, 234, 58, 1, 1, '#5fe3d0'); rect(g, 225, 70, 8, 4, '#1d2140');
+      if (this.crowd.vendingInUse()) rect(g, 228, 70, 3, 3, '#ffd166');
+    });
+    add(99, g => { // three armchairs extend the lounge beyond the sofa
+      for (const x of [178, 193, 208]) {
+        rect(g, x, 85, 12, 9, '#4a5494'); rect(g, x + 1, 86, 10, 6, '#6874b8');
+        rect(g, x, 91, 12, 6, '#7480c8'); rect(g, x + 1, 92, 10, 4, '#98a3e6');
+        rect(g, x, 96, 1, 2, '#4a5494'); rect(g, x + 11, 96, 1, 2, '#4a5494');
+      }
+    });
+    add(97, g => { // chairs around the conference table
+      for (const [x, y] of [[273, 88], [253, 105], [298, 105]] as const) {
+        rect(g, x, y, 14, 8, '#3d7185'); rect(g, x + 1, y + 1, 12, 5, '#64a6bb');
+        rect(g, x, y + 6, 14, 4, '#75bfd0'); rect(g, x + 1, y + 7, 12, 2, '#9edce4');
+      }
+      rect(g, 273, 121, 14, 8, '#3d7185'); rect(g, 274, 122, 12, 5, '#64a6bb');
+      rect(g, 273, 127, 14, 3, '#75bfd0');
     });
     add(SOFA.seatY - 3, g => { // sofa back
       rect(g, 180, 101, 46, 13, '#5a63a8'); rect(g, 180, 101, 46, 2, '#8a95dc'); rect(g, 222, 103, 4, 11, '#444c8a');
@@ -342,6 +365,25 @@ export class Office {
         rect(g, 199 + i * 2 + (f > 0.5 ? 1 : 0), Math.round(116 - f * 7), 1, 1, '#f4f6ff');
       }
       g.globalAlpha = 1;
+    });
+    add(119, g => { // conference table with a shared agenda sheet
+      rect(g, 269, 103, 26, 17, '#754e3d'); rect(g, 270, 104, 24, 13, '#c18b62');
+      rect(g, 270, 104, 24, 2, '#e0ad7b'); rect(g, 273, 118, 2, 4, '#754e3d'); rect(g, 289, 118, 2, 4, '#754e3d');
+      rect(g, 277, 108, 10, 5, '#eef0f8'); rect(g, 278, 109, 7, 1, '#6c83a5'); rect(g, 278, 111, 5, 1, '#b4a8ff');
+    });
+    add(85, g => { // walls at the back of the meeting room
+      rect(g, 244, 82, 76, 4, '#303860'); rect(g, 244, 82, 76, 1, '#6874a8');
+      rect(g, 244, 86, 4, 12, '#3a426a'); rect(g, 244, 86, 1, 12, '#6874a8');
+    });
+    add(115, g => { // low divider and blue doorway panel
+      rect(g, 244, 116, 4, 20, '#3a426a'); rect(g, 244, 116, 1, 20, '#6874a8');
+      rect(g, 244, 98, 4, 18, '#547b8b'); rect(g, 244, 98, 1, 18, '#9edce4');
+    });
+    add(136, g => { // front wall sits in front of the room
+      rect(g, 244, 136, 76, 4, '#303860'); rect(g, 244, 136, 76, 1, '#6874a8');
+    });
+    add(140, g => { // side wall
+      rect(g, 316, 82, 4, 58, '#303860'); rect(g, 316, 82, 1, 58, '#6874a8');
     });
     add(60, g => { // bookshelf against the wall
       rect(g, 15, 34, 14, 26, '#5d4234'); rect(g, 16, 35, 12, 24, '#3a2a24');

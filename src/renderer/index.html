@@ -30,6 +30,20 @@
           <div class="usage-note" id="codex-setup-note"></div>
           <button type="button" class="ghost-btn setup-btn" id="codex-setup-button" hidden>연결하기</button>
         </div>
+        <div class="usage-card setup-card">
+          <div class="usage-head"><span>사무실 백업</span><strong>로컬 파일</strong></div>
+          <div class="usage-note">이름, 캐릭터, 에이전트 목록과 최근 활동을 내보내요. 세션 ID와 작업 경로도 포함됩니다.</div>
+          <div class="backup-actions">
+            <button type="button" class="ghost-btn" id="backup-export">내보내기</button>
+            <button type="button" class="ghost-btn" id="backup-import">가져오기</button>
+          </div>
+          <input id="backup-file" type="file" accept="application/json,.json" hidden>
+        </div>
+        <div class="usage-card setup-card">
+          <div class="usage-head"><span>데스크톱 알림</span><strong id="notification-state">확인 중</strong></div>
+          <div class="usage-note" id="notification-note"></div>
+          <button type="button" class="ghost-btn setup-btn" id="notification-enable" hidden>알림 켜기</button>
+        </div>
         <div class="usage-card">
           <div class="usage-head"><span>받은 훅 이벤트</span><strong id="event-count">0</strong></div>
           <div class="usage-note">프롬프트, 도구 입력, 파일 내용은 받지도 저장하지도 않아요.</div>
@@ -73,6 +87,21 @@
         <div class="scene-footer"><span>에이전트는 작업이 끝나도 자기 자리에 머물러요</span><span><i class="live-dot"></i><span id="sync-text">방금 업데이트</span></span></div>
       </section>
 
+      <section class="panel meeting-panel" id="meeting" aria-label="에이전트 회의실">
+        <div class="panel-head meeting-head">
+          <div><h3>회의실</h3><p>쉬는 에이전트 2~4명을 초대해 안건을 순서대로 논의해요.</p></div>
+          <span class="meeting-limit">참석자당 CLI 응답 1회</span>
+        </div>
+        <div class="meeting-compose">
+          <div class="meeting-participants"><h4>참석자</h4><div id="meeting-agent-list" class="meeting-agent-list"></div></div>
+          <form id="meeting-form" class="meeting-form">
+            <label class="field" for="meeting-agenda">회의 안건<textarea id="meeting-agenda" maxlength="600" rows="3" placeholder="예: 다음 릴리스 전에 우선 처리할 문제를 정리해줘"></textarea></label>
+            <div class="meeting-actions"><span id="meeting-hint">에이전트를 2~4명 선택해 주세요.</span><button type="submit" class="send-btn" id="meeting-start" disabled>회의 시작</button></div>
+          </form>
+        </div>
+        <div id="meeting-history" class="meeting-history"><div class="activity-empty">아직 회의 기록이 없어요.</div></div>
+      </section>
+
       <section class="below-grid">
         <div class="panel" id="activity">
           <div class="panel-head activity-head">
@@ -100,6 +129,7 @@
             <option value="">에이전트를 선택해 주세요</option>
           </select>
         </div>
+        <div class="agent-summary" id="agent-summary" hidden></div>
         <div class="chat-messages" id="chat-messages" aria-live="polite">
           <div class="activity-empty">실제 CLI 세션이 감지되면 해당 에이전트에게 메시지를 보낼 수 있어요.</div>
         </div>

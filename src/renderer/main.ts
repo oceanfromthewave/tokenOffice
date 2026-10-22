@@ -1,11 +1,11 @@
 // Dashboard: polls the local hook receiver for Claude Code and Codex sessions.
 import { LOOKS, type Look } from '../shared/pixels.ts';
-import type { ActivityItem, AgentRecord, AgentState, ChatMessage, Provider, Snapshot } from '../shared/types.ts';
+import type { ActivityItem, AgentMeeting, AgentRecord, AgentState, ChatMessage, Provider, Snapshot } from '../shared/types.ts';
 import { Office, type OfficeAgent } from './office/office.ts';
 import { headUrl, propUrl } from './office/sprites.ts';
 
 /** `key` names whoever this is across sessions (project for a session, type for a subagent) so a rename sticks. */
-interface ViewAgent extends OfficeAgent { role: string; key: string; baseName: string; projectLabel?: string; provider?: Provider }
+interface ViewAgent extends OfficeAgent { role: string; key: string; baseName: string; projectLabel?: string; provider?: Provider; sessionId: string; restored: boolean; updatedAt: number }
 interface Stats { tools: number; turns: number; events: number }
 interface ActivityRow {
   agent: string;
@@ -42,6 +42,9 @@ let knownProjects = new Map<string, ProjectRef>();
 let chatAgentId = '';
 const chatPending = new Set<string>();
 let chatPollTimer = 0;
+let previousAgentStates = new Map<string, AgentState>();
+let meetingRecords: AgentMeeting[] = [];
+const meetingSelection = new Set<string>();
 
 // ---------------- names and characters people chose ----------------
 interface Profile { name?: string; look?: Look }
@@ -59,19 +62,23 @@ function saveProfiles() {
   // browser storage can be unavailable (private window); then a rename lasts until the window closes
   try { localStorage.setItem(PROFILE_STORE, JSON.stringify(profiles)); } catch { /* keep the in-memory copy */ }
 }
+function saveAutoNames() {
+  try { localStorage.setItem(AUTO_NAME_STORE, JSON.stringify([...autoNames].slice(-100))); } catch { /* names last until reload */ }
+}
 
 // ---------------- shared rendering ----------------
 function render(stats: Stats, instant = false) {
   office.setAgents(agents, instant);
   renderSidebar();
-  const working = agents.filter(a => a.state === 'working').length;
+  const working = agents.filter(a => a.state === 'working' || a.meeting).length;
+  const inMeeting = agents.filter(a => a.meeting).length;
   $('#agent-count').textContent = String(agents.length);
   $('#active-count').textContent = `${working} / ${agents.length}`;
   $('#tool-count').textContent = String(stats.tools);
   $('#turn-count').textContent = String(stats.turns);
   $('#event-count').textContent = String(stats.events);
   $('#mood').textContent = mood();
-  $('#room-text').textContent = agents.length ? (working ? `${working}명 작업 중` : '모두 쉬는 중') : '아무도 없어요';
+  $('#room-text').textContent = !agents.length ? '아무도 없어요' : inMeeting ? `${inMeeting}명 회의 중` : working ? `${working}명 작업 중` : '모두 쉬는 중';
   $('#empty-office').hidden = agents.length > 0;
   if (stats.turns > lastTurns) office.print();
   lastTurns = stats.turns;
@@ -80,7 +87,7 @@ function render(stats: Stats, instant = false) {
 function mood(): string {
   if (agents.some(a => a.state === 'error')) return '문제 발생';
   if (agents.some(a => a.state === 'waiting')) return '확인 필요';
-  const working = agents.filter(a => a.state === 'working').length;
+  const working = agents.filter(a => a.state === 'working' || a.meeting).length;
   if (!agents.length) return '조용함';
   return working === 0 ? '휴식 시간' : working === agents.length ? '집중 모드' : '평화로움';
 }
@@ -91,10 +98,11 @@ function renderSidebar() {
     const row = el('div', `agent-row${a.id === selected ? ' selected' : ''}`);
     const pick = el('button', 'agent-pick');
     pick.type = 'button';
-    const avatar = el('span', `mini-avatar${a.state === 'working' ? ' online' : ''}`);
+    const avatar = el('span', `mini-avatar${a.state === 'working' || a.meeting ? ' online' : ''}`);
     avatar.style.backgroundImage = `url(${headUrl(a.look)})`;
     const meta = el('span', 'agent-meta');
-    meta.append(el('strong', '', a.name), el('small', '', `${LABEL[a.state]} · ${a.role}`));
+    const status = a.restored ? `복원됨 · ${ago(a.updatedAt)}` : `${a.meeting ? '회의 중' : LABEL[a.state]} · ${a.role}`;
+    meta.append(el('strong', '', a.name), el('small', '', status));
     pick.append(avatar, meta);
     pick.addEventListener('click', () => select(a.id));
     const edit = el('button', 'rename-btn', '✎');
@@ -106,6 +114,7 @@ function renderSidebar() {
     return row;
   }));
   renderChatTargets();
+  renderMeetingParticipants();
 }
 
 function projectLabels() {
@@ -167,6 +176,16 @@ function drawActivity() {
     const text = el('div', 'activity-text');
     text.append(el('strong', '', item.agent), document.createTextNode(` ${item.text}${item.count > 1 ? ` · ${item.count}회` : ''}`), el('small', '', item.detail));
     row.append(el('div', 'activity-icon', item.icon), text, el('span', 'activity-time', ago(item.at)));
+    if (item.sourceId) {
+      row.classList.add('activity-row-link');
+      row.tabIndex = 0;
+      row.setAttribute('role', 'button');
+      row.title = '에이전트별 활동 요약 보기';
+      row.addEventListener('click', () => select(item.sourceId!));
+      row.addEventListener('keydown', event => {
+        if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); select(item.sourceId!); }
+      });
+    }
     return row;
   }));
 }
@@ -179,6 +198,7 @@ function renderActivity(items: ActivityRow[], enabled = live) {
   projectFilter.disabled = !enabled;
   updateActivityProjectOptions();
   drawActivity();
+  renderAgentSummary();
 }
 
 $('#activity-provider-filter').addEventListener('change', drawActivity);
@@ -194,6 +214,78 @@ function renderQueue(items: { icon: string; title: string; detail: string; tag: 
   }));
 }
 
+function renderMeetingParticipants() {
+  const list = $('#meeting-agent-list');
+  const targets = agents.filter(agent => !agent.isSubagent);
+  const roomBusy = meetingRecords.some(meeting => meeting.status === 'running');
+  const signature = JSON.stringify([roomBusy, targets.map(agent => [agent.id, agent.name, agent.state, agent.provider, agent.restored, agent.meeting])]);
+  if (list.dataset.options === signature) { renderMeetingControls(); return; }
+  list.dataset.options = signature;
+  for (const id of meetingSelection) if (!targets.some(agent => agent.id === id)) meetingSelection.delete(id);
+  if (!targets.length) {
+    list.replaceChildren(el('div', 'meeting-empty', '실제 메인 세션이 나타나면 참석자로 초대할 수 있어요.'));
+    renderMeetingControls();
+    return;
+  }
+  list.replaceChildren(...targets.map(agent => {
+    const label = el('label', 'meeting-agent-option');
+    const checkbox = el('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = meetingSelection.has(agent.id);
+    checkbox.disabled = roomBusy || agent.state === 'working' || agent.state === 'waiting' || Boolean(agent.meeting);
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) meetingSelection.add(agent.id); else meetingSelection.delete(agent.id);
+      renderMeetingControls();
+    });
+    const copy = el('span');
+    const status = agent.restored ? '복원됨 · 연결 대기' : agent.meeting ? '회의 중' : `${LABEL[agent.state]} · ${agent.provider ? PROVIDER_NAME[agent.provider] : ''}`;
+    copy.append(el('strong', '', agent.name), el('small', '', status));
+    label.append(checkbox, copy);
+    return label;
+  }));
+  renderMeetingControls();
+}
+
+function renderMeetingControls() {
+  const selectedAgents = agents.filter(agent => meetingSelection.has(agent.id));
+  const agenda = $<HTMLTextAreaElement>('#meeting-agenda').value.trim();
+  const button = $<HTMLButtonElement>('#meeting-start');
+  const invalidCount = selectedAgents.length < 2 || selectedAgents.length > 4;
+  const roomBusy = meetingRecords.some(meeting => meeting.status === 'running');
+  const busy = selectedAgents.some(agent => agent.state === 'working' || agent.state === 'waiting' || agent.meeting);
+  button.disabled = invalidCount || !agenda || busy || roomBusy;
+  $('#meeting-hint').textContent = roomBusy
+    ? '진행 중인 회의가 끝나면 새 회의를 시작할 수 있어요.'
+    : invalidCount
+    ? '에이전트를 2~4명 선택해 주세요.'
+    : busy ? '작업 중인 에이전트는 회의에 초대할 수 없어요.'
+      : !agenda ? '회의 안건을 입력해 주세요.'
+        : `참석자 ${selectedAgents.length}명 · 각 CLI 세션에 순서대로 의견을 요청해요.`;
+}
+
+function renderMeetings() {
+  const list = $('#meeting-history');
+  if (!meetingRecords.length) {
+    list.replaceChildren(el('div', 'activity-empty', '아직 회의 기록이 없어요.'));
+    return;
+  }
+  const stateLabel = (state: AgentMeeting['status']) => state === 'running' ? '진행 중' : state === 'complete' ? '완료' : '일부 응답 실패';
+  const turnLabel = (state: AgentMeeting['turns'][number]['state']) => state === 'queued' ? '발언 대기' : state === 'speaking' ? '발언 중' : state === 'complete' ? '발언 완료' : '응답 실패';
+  list.replaceChildren(...meetingRecords.slice(0, 8).map(meeting => {
+    const card = el('article', 'meeting-card');
+    const head = el('div', 'meeting-card-head');
+    head.append(el('strong', '', stateLabel(meeting.status)), el('small', '', ago(meeting.startedAt)));
+    card.append(head, el('p', 'meeting-agenda', `안건: ${meeting.agenda}`));
+    for (const turn of meeting.turns) {
+      const row = el('div', `meeting-turn${turn.state === 'speaking' ? ' speaking' : ''}${turn.state === 'error' ? ' error' : ''}`);
+      row.append(el('div', 'meeting-turn-head', `${turn.name} · ${PROVIDER_NAME[turn.provider]} · ${turnLabel(turn.state)}`));
+      if (turn.text) row.append(el('p', '', turn.text));
+      card.append(row);
+    }
+    return card;
+  }));
+}
+
 function select(id: string) {
   const agent = agents.find(a => a.id === id);
   if (!agent) return;
@@ -205,16 +297,61 @@ function select(id: string) {
     void loadChatHistory(id);
   }
   renderSidebar();
-  toast(`${agent.name} · ${LABEL[agent.state]}${agent.tool ? ` · ${agent.tool}` : ''}`);
+  renderAgentSummary();
+  toast(`${agent.name} · ${agent.restored ? '복원됨' : agent.meeting ? '회의 중' : LABEL[agent.state]}${agent.tool ? ` · ${agent.tool}` : ''}`);
 }
 
 let toastTimer = 0;
-function toast(message: string) {
+function toast(message: string, action?: { label: string; run: () => void }, duration = 2400) {
   const node = $('#toast');
-  node.textContent = message;
+  node.replaceChildren(document.createTextNode(message));
+  node.classList.toggle('has-action', Boolean(action));
+  if (action) {
+    const button = el('button', 'toast-action', action.label);
+    button.type = 'button';
+    button.addEventListener('click', () => { node.classList.remove('show'); action.run(); });
+    node.append(button);
+  }
   node.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => node.classList.remove('show'), 2400);
+  toastTimer = window.setTimeout(() => node.classList.remove('show'), duration);
+}
+
+function focusAgent(agent: ViewAgent) {
+  const target = agent.isSubagent
+    ? agents.find(item => !item.isSubagent && item.provider === agent.provider && item.sessionId === agent.sessionId)
+    : agent;
+  if (!target) {
+    select(agent.id);
+    $('#activity').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return;
+  }
+  select(target.id);
+  $('#agent-chat').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  window.setTimeout(() => $<HTMLInputElement>('#chat-input').focus({ preventScroll: true }), 250);
+}
+
+function notifyAgentTransitions(records: AgentRecord[], first: boolean) {
+  const next = new Map<string, AgentState>();
+  for (const record of records) {
+    const previous = previousAgentStates.get(record.id);
+    if (!first && previous !== record.state && (record.state === 'waiting' || record.state === 'error')) {
+      const agent = agents.find(item => item.id === record.id);
+      if (agent) {
+        const title = record.state === 'waiting' ? '확인이 필요한 에이전트' : '오류가 발생한 에이전트';
+        const detail = `${agent.name} · ${record.state === 'waiting' ? '사용자 확인 대기' : '실행 중 오류'}`;
+        toast(detail, { label: '열기', run: () => focusAgent(agent) }, 8000);
+        try {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            const notification = new Notification(title, { body: detail });
+            notification.onclick = () => { window.focus(); focusAgent(agent); notification.close(); };
+          }
+        } catch { /* in-app notification remains available */ }
+      }
+    }
+    next.set(record.id, record.state);
+  }
+  previousAgentStates = next;
 }
 
 const ago = (at: number) => {
@@ -243,7 +380,7 @@ function autoName(record: AgentRecord, taken: Set<string>): string {
     name = free.length ? free[Math.floor(Math.random() * free.length)]! : `${pick(pool)} ${taken.size + 1}`;
     autoNames.set(record.id, name);
     // remember the last few sessions only
-    try { localStorage.setItem(AUTO_NAME_STORE, JSON.stringify([...autoNames].slice(-60))); } catch { /* names last until reload */ }
+    saveAutoNames();
   }
   return name;
 }
@@ -280,6 +417,7 @@ function fromRecords(records: AgentRecord[], labels: Map<string, string>): ViewA
     return {
       id: r.id,
       provider: r.provider,
+      sessionId: r.sessionId,
       key,
       baseName: generated,
       projectLabel,
@@ -288,10 +426,48 @@ function fromRecords(records: AgentRecord[], labels: Map<string, string>): ViewA
       state: r.state,
       tool: r.tool,
       isSubagent: r.isSubagent,
+      restored: Boolean(r.restored),
+      updatedAt: r.updatedAt,
       // the folder (or the subagent's type) still shows under the name
       role: [PROVIDER_NAME[r.provider], r.isSubagent ? r.agentType || '서브에이전트' : projectLabel, r.tool].filter(Boolean).join(' · '),
     };
   });
+}
+
+function renderAgentSummary() {
+  const panel = $('#agent-summary');
+  const agent = agents.find(item => item.id === selected);
+  if (!agent) { panel.hidden = true; panel.replaceChildren(); return; }
+  panel.hidden = false;
+
+  const recent = activityRows.filter(item => item.sourceId === agent.id).sort((a, b) => b.at - a.at);
+  const lastTask = recent.find(item => item.text === '새 작업 시작');
+  const lastReply = recent.find(item => item.text === '응답 완료' || item.text === '실행 중 오류');
+  const head = el('div', 'agent-summary-head');
+  const identity = el('div', 'agent-summary-identity');
+  identity.append(el('strong', '', agent.name), el('small', '', `${agent.provider ? PROVIDER_NAME[agent.provider] : ''} · ${agent.projectLabel ?? agent.role}`));
+  head.append(identity, el('span', `agent-state-tag${agent.restored ? ' restored' : agent.state === 'error' || agent.state === 'waiting' ? ' alert' : ''}`,
+    agent.restored ? `복원됨 · ${ago(agent.updatedAt)}` : agent.meeting ? '회의 중' : LABEL[agent.state]));
+
+  const summaries = el('div', 'agent-summary-stats');
+  const addStat = (title: string, item?: ActivityRow) => {
+    const card = el('div', 'agent-summary-stat');
+    card.append(el('small', '', title), el('strong', '', item?.text ?? '기록 없음'), el('span', '', item ? ago(item.at) : '새 이벤트를 기다려요'));
+    summaries.append(card);
+  };
+  addStat('마지막 작업 시작', lastTask);
+  addStat('마지막 응답', lastReply);
+
+  const history = el('div', 'agent-recent-history');
+  history.append(el('h4', '', '최근 활동'));
+  const items = recent.slice(0, 6);
+  if (!items.length) history.append(el('p', 'activity-empty', '아직 기록된 활동이 없어요.'));
+  else history.append(...items.map(item => {
+    const row = el('div', 'agent-history-row');
+    row.append(el('span', 'agent-history-event', item.text), el('small', '', [item.tool, ago(item.at)].filter(Boolean).join(' · ')));
+    return row;
+  }));
+  panel.replaceChildren(head, summaries, history);
 }
 
 function applySnapshot(snapshot: Snapshot) {
@@ -300,7 +476,9 @@ function applySnapshot(snapshot: Snapshot) {
   live = true;
   rememberProjects(snapshot);
   const labels = projectLabels();
-  agents = fromRecords(snapshot.agents, labels);
+  const meetingParticipants = new Set(meetingRecords.filter(meeting => meeting.status === 'running').flatMap(meeting => meeting.turns.map(turn => turn.agentId)));
+  agents = fromRecords(snapshot.agents, labels).map(agent => ({ ...agent, meeting: meetingParticipants.has(agent.id) }));
+  notifyAgentTransitions(snapshot.agents, first);
   const providerText = snapshot.providers.map(provider => {
     const lastSeen = snapshot.lastSeenAt[provider];
     return `${PROVIDER_NAME[provider]} · ${lastSeen ? ago(lastSeen) : '수신 기록 있음'}`;
@@ -311,8 +489,10 @@ function applySnapshot(snapshot: Snapshot) {
   $('#live-text').textContent = providerText.join('  /  ') || '실제 이벤트 수신 대기';
   pill.title = '연결 여부가 아닌, 제공자별 마지막 훅 이벤트 시각이에요.';
   pill.classList.toggle('recent', latestEvent > 0 && Date.now() - latestEvent < 60_000);
-  const sourceNames = snapshot.providers.map(provider => PROVIDER_NAME[provider]).join(' + ') || '연동 도구';
-  $('#hero-text').textContent = agents.length ? `${sourceNames} 세션의 실제 상태를 보여주고 있어요.` : `${sourceNames}의 새 이벤트를 기다리고 있어요. 마지막 이벤트는 ${latestEvent ? ago(latestEvent) : '아직 없어요'}.`;
+  const sourceNames = [...new Set([...snapshot.providers, ...agents.map(agent => agent.provider).filter((value): value is Provider => Boolean(value))])].map(provider => PROVIDER_NAME[provider]).join(' + ') || '연동 도구';
+  $('#hero-text').textContent = agents.some(agent => agent.restored)
+    ? `저장된 세션 ${agents.filter(agent => agent.restored).length}개를 복원했어요. 새 훅 이벤트가 오면 연결 상태를 확인해요.`
+    : agents.length ? `${sourceNames} 세션의 실제 상태를 보여주고 있어요.` : `${sourceNames}의 새 이벤트를 기다리고 있어요. 마지막 이벤트는 ${latestEvent ? ago(latestEvent) : '아직 없어요'}.`;
   render(snapshot.metrics, first);
   renderActivity(snapshot.activity.map((a: ActivityItem) => ({
     agent: a.agent,
@@ -324,17 +504,37 @@ function applySnapshot(snapshot: Snapshot) {
     provider: a.provider,
     sourceId: a.sourceId,
     projectId: projectIdentity(a),
-  })));
+  })), snapshot.connected || snapshot.activity.length > 0);
   renderQueue([{ icon: 'i', title: '선택한 에이전트에 메시지를 보내세요', detail: '쉬는 세션을 CLI로 재개해요. 기존 권한 정책이 적용되고, 이 화면에서는 권한을 승인할 수 없어요.', tag: '안내' }]);
   renderChatTargets();
 }
 
+function applyMeetings(records: AgentMeeting[]) {
+  meetingRecords = records;
+  const active = new Set(records.filter(meeting => meeting.status === 'running').flatMap(meeting => meeting.turns.map(turn => turn.agentId)));
+  agents = agents.map(agent => ({ ...agent, meeting: active.has(agent.id) }));
+  office.setAgents(agents);
+  const working = agents.filter(agent => agent.state === 'working' || agent.meeting).length;
+  const inMeeting = agents.filter(agent => agent.meeting).length;
+  $('#active-count').textContent = `${working} / ${agents.length}`;
+  $('#mood').textContent = mood();
+  $('#room-text').textContent = !agents.length ? '아무도 없어요' : inMeeting ? `${inMeeting}명 회의 중` : working ? `${working}명 작업 중` : '모두 쉬는 중';
+  renderSidebar();
+  renderAgentSummary();
+  renderMeetings();
+  updateChatControls();
+}
+
 async function poll() {
   try {
-    const response = await fetch('/api/state', { cache: 'no-store' });
+    const [response, meetingResponse] = await Promise.all([
+      fetch('/api/state', { cache: 'no-store' }),
+      fetch('/api/meetings', { cache: 'no-store' }),
+    ]);
     if (!response.ok) throw new Error(String(response.status));
     const snapshot = (await response.json()) as Snapshot;
-    if (snapshot.connected) applySnapshot(snapshot);
+    applySnapshot(snapshot);
+    if (meetingResponse.ok) applyMeetings(await meetingResponse.json() as AgentMeeting[]);
     $('#sync-text').textContent = '방금 업데이트';
   } catch {
     $('#sync-text').textContent = '수신기에 연결할 수 없어요';
@@ -362,15 +562,17 @@ function updateChatControls() {
   const target = agents.find(agent => agent.id === chatAgentId && !agent.isSubagent);
   const input = $<HTMLInputElement>('#chat-input');
   const button = $<HTMLButtonElement>('#chat-form .send-btn');
-  const busy = Boolean(target && (target.state === 'working' || target.state === 'waiting'));
+  const busy = Boolean(target && (target.state === 'working' || target.state === 'waiting' || target.meeting));
   const pending = Boolean(target && chatPending.has(target.id));
   input.disabled = !target || busy || pending;
   button.disabled = !target || busy || pending;
   $('#chat-status').textContent = !target
     ? agents.some(agent => !agent.isSubagent) ? '메시지를 보낼 에이전트를 선택해 주세요.' : '훅 이벤트가 도착하면 실제 세션에 메시지를 보낼 수 있어요.'
     : pending ? `${target.name}의 답변을 기다리고 있어요.`
-      : busy ? `${target.name}이 현재 작업 중이에요. 작업이 끝나면 메시지를 보낼 수 있어요.`
-        : `${target.name} 세션에 다음 메시지를 보낼 수 있어요.`;
+      : target.meeting ? `${target.name}이 회의 중이에요. 회의가 끝나면 채팅할 수 있어요.`
+        : busy ? `${target.name}이 현재 작업 중이에요. 작업이 끝나면 메시지를 보낼 수 있어요.`
+        : target.restored ? `복원된 세션이에요. 메시지를 보내면 ${target.provider ? PROVIDER_NAME[target.provider] : 'CLI'}에서 다시 연결을 시도해요.`
+          : `${target.name} 세션에 다음 메시지를 보낼 수 있어요.`;
 }
 
 function renderChat(messages: ChatMessage[], agent: ViewAgent) {
@@ -422,7 +624,7 @@ $('#chat-agent-select').addEventListener('change', event => {
   const id = (event.currentTarget as HTMLSelectElement).value;
   chatAgentId = id;
   const agent = agents.find(item => item.id === id);
-  if (agent) { selected = id; office.select(id); renderSidebar(); }
+  if (agent) { selected = id; office.select(id); renderSidebar(); renderAgentSummary(); }
   void loadChatHistory(id);
   updateChatControls();
 });
@@ -432,7 +634,7 @@ $('#chat-form').addEventListener('submit', async event => {
   const target = agents.find(agent => agent.id === chatAgentId && !agent.isSubagent);
   const input = $<HTMLInputElement>('#chat-input');
   const message = input.value.trim();
-  if (!target || !message || target.state === 'working' || target.state === 'waiting' || chatPending.has(target.id)) return;
+  if (!target || !message || target.state === 'working' || target.state === 'waiting' || target.meeting || chatPending.has(target.id)) return;
   const targetId = target.id;
   chatPending.add(targetId);
   updateChatControls();
@@ -450,6 +652,35 @@ $('#chat-form').addEventListener('submit', async event => {
     chatPending.delete(targetId);
     toast((error as Error).message);
     updateChatControls();
+  }
+});
+
+$('#meeting-agenda').addEventListener('input', renderMeetingControls);
+$('#meeting-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const selectedAgents = agents.filter(agent => meetingSelection.has(agent.id));
+  const agenda = $<HTMLTextAreaElement>('#meeting-agenda').value.trim();
+  if (selectedAgents.length < 2 || selectedAgents.length > 4 || !agenda) return;
+  const button = $<HTMLButtonElement>('#meeting-start');
+  button.disabled = true;
+  button.textContent = '회의를 준비해요';
+  try {
+    const response = await fetch('/api/meetings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ agenda, participants: selectedAgents.map(agent => ({ id: agent.id, name: agent.name })) }),
+    });
+    const body = await response.json() as AgentMeeting & { error?: string };
+    if (!response.ok) throw new Error(body.error ?? '회의를 시작하지 못했어요.');
+    $<HTMLTextAreaElement>('#meeting-agenda').value = '';
+    meetingSelection.clear();
+    toast('회의를 시작했어요. 각 CLI 세션에 안건과 앞선 발언을 전달해요.');
+    await poll();
+  } catch (error) {
+    toast((error as Error).message);
+  } finally {
+    button.textContent = '회의 시작';
+    renderMeetingParticipants();
   }
 });
 
@@ -512,6 +743,137 @@ async function toggleSetup(provider: ToolProvider) {
 $('#claude-setup-button').addEventListener('click', () => void toggleSetup('claude'));
 $('#codex-setup-button').addEventListener('click', () => void toggleSetup('codex'));
 window.addEventListener('focus', () => void loadSetups());
+
+function renderNotificationSetup() {
+  const state = $('#notification-state');
+  const note = $('#notification-note');
+  const button = $<HTMLButtonElement>('#notification-enable');
+  if (!('Notification' in window)) {
+    state.textContent = '미지원';
+    note.textContent = '이 환경에서는 데스크톱 알림을 사용할 수 없어요.';
+    button.hidden = true;
+    return;
+  }
+  if (Notification.permission === 'granted') {
+    state.textContent = '켜짐';
+    note.textContent = '확인 대기나 오류가 생기면 에이전트 채팅을 여는 알림을 보내요.';
+    button.hidden = true;
+  } else if (Notification.permission === 'denied') {
+    state.textContent = '차단됨';
+    note.textContent = 'Windows 앱 알림 설정에서 tokenOffice 알림을 허용해 주세요.';
+    button.hidden = true;
+  } else {
+    state.textContent = '꺼짐';
+    note.textContent = '앱이 뒤에 있어도 확인 대기와 오류를 알려드려요.';
+    button.hidden = false;
+  }
+}
+
+$('#notification-enable').addEventListener('click', async () => {
+  const button = $<HTMLButtonElement>('#notification-enable');
+  button.disabled = true;
+  try {
+    const permission = await Notification.requestPermission();
+    renderNotificationSetup();
+    toast(permission === 'granted' ? '데스크톱 알림을 켰어요.' : '데스크톱 알림 권한이 허용되지 않았어요.');
+  } catch {
+    toast('데스크톱 알림을 설정하지 못했어요.');
+  } finally {
+    button.disabled = false;
+    renderNotificationSetup();
+  }
+});
+renderNotificationSetup();
+
+// ---------------- office backup ----------------
+interface OfficeBackupFile {
+  format: 'tokenOffice-backup';
+  version: 1;
+  exportedAt: string;
+  profiles: Record<string, Profile>;
+  autoNames: [string, string][];
+  office: { version: number; agents: unknown[]; activity?: unknown[] };
+}
+
+async function exportBackup() {
+  const button = $<HTMLButtonElement>('#backup-export');
+  button.disabled = true;
+  try {
+    const response = await fetch('/api/backup', { cache: 'no-store' });
+    const officeData = await response.json() as OfficeBackupFile['office'] & { error?: string };
+    if (!response.ok) throw new Error(officeData.error ?? '백업 자료를 만들지 못했어요.');
+    const backup: OfficeBackupFile = {
+      format: 'tokenOffice-backup',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      profiles,
+      autoNames: [...autoNames].slice(-100),
+      office: officeData,
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const anchor = el('a');
+    anchor.href = url;
+    anchor.download = `tokenOffice-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('사무실 백업 파일을 저장했어요.');
+  } catch (error) {
+    toast((error as Error).message);
+  } finally {
+    button.disabled = false;
+  }
+}
+
+function validProfiles(input: unknown): Record<string, Profile> {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return {};
+  const result: Record<string, Profile> = {};
+  for (const [key, value] of Object.entries(input).slice(0, 500)) {
+    if (!key || key.length > 180 || key === '__proto__' || key === 'constructor' || !value || typeof value !== 'object') continue;
+    const item = value as { name?: unknown; look?: unknown };
+    const name = typeof item.name === 'string' ? item.name.trim().slice(0, 16) : '';
+    const look = typeof item.look === 'string' && ALL_LOOKS.includes(item.look as Look) ? item.look as Look : undefined;
+    if (name || look) result[key] = { ...(name ? { name } : {}), ...(look ? { look } : {}) };
+  }
+  return result;
+}
+
+async function importBackup(file: File) {
+  try {
+    const parsed = JSON.parse(await file.text()) as Partial<OfficeBackupFile>;
+    if (parsed.format !== 'tokenOffice-backup' || parsed.version !== 1 || !parsed.office || !Array.isArray(parsed.office.agents)) {
+      throw new Error('tokenOffice 백업 파일을 선택해 주세요.');
+    }
+    const importedProfiles = validProfiles(parsed.profiles);
+    const importedNames = Array.isArray(parsed.autoNames)
+      ? parsed.autoNames.filter((entry): entry is [string, string] => Array.isArray(entry) && typeof entry[0] === 'string' && entry[0].length <= 180 && typeof entry[1] === 'string' && entry[1].length <= 48).slice(-100)
+      : [];
+    const response = await fetch('/api/backup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ format: parsed.format, version: parsed.version, office: parsed.office }),
+    });
+    const result = await response.json() as { agents?: number; activity?: number; error?: string };
+    if (!response.ok) throw new Error(result.error ?? '백업을 가져오지 못했어요.');
+    profiles = { ...profiles, ...importedProfiles };
+    saveProfiles();
+    importedNames.forEach(([id, name]) => autoNames.set(id, name));
+    saveAutoNames();
+    await poll();
+    toast(`백업을 가져왔어요 · 에이전트 ${result.agents ?? 0}명 · 활동 ${result.activity ?? 0}건`);
+  } catch (error) {
+    toast((error as Error).message || '백업 파일을 읽지 못했어요.');
+  }
+}
+
+$('#backup-export').addEventListener('click', () => void exportBackup());
+$('#backup-import').addEventListener('click', () => $<HTMLInputElement>('#backup-file').click());
+$('#backup-file').addEventListener('change', event => {
+  const input = event.currentTarget as HTMLInputElement;
+  const file = input.files?.[0];
+  if (file) void importBackup(file);
+  input.value = '';
+});
 
 // ---------------- rename ----------------
 const dialog = $<HTMLDialogElement>('#rename-dialog');

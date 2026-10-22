@@ -10,20 +10,21 @@ interface Executable { command: string; prefix: string[] }
 
 async function executable(name: string): Promise<Executable> {
   if (process.platform !== 'win32') return { command: name, prefix: [] };
-  let paths: string[];
+  let path: string;
   try {
-    const { stdout } = await execFile('where.exe', [name], { timeout: 3000, windowsHide: true });
-    paths = String(stdout).split(/\r?\n/).map(path => path.trim()).filter(Boolean);
+    // PowerShell emits a UTF-16 path as base64 so non-ASCII Windows profile names survive pipes.
+    const script = `$ErrorActionPreference = 'Stop'; $command = Get-Command -Name '${name}' -ErrorAction Stop | Where-Object { $_.CommandType -in @('Application', 'ExternalScript') } | Select-Object -First 1; if ($null -eq $command -or -not $command.Source) { exit 2 }; [Console]::Write([Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes([string]$command.Source)))`;
+    const { stdout } = await execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 3000, windowsHide: true });
+    path = Buffer.from(String(stdout).trim(), 'base64').toString('utf16le').trim();
   } catch {
     throw new Error(`${name} CLI를 찾지 못했어요. 먼저 해당 CLI를 설치하고 PATH에 등록해 주세요.`);
   }
-  const native = paths.find(path => /\.(exe|com)$/i.test(path));
-  if (native) return { command: native, prefix: [] };
-  const powershellScript = paths.find(path => /\.ps1$/i.test(path));
-  if (powershellScript) return {
+  if (/\.(exe|com)$/i.test(path)) return { command: path, prefix: [] };
+  if (/\.ps1$/i.test(path)) return {
     command: 'powershell.exe',
-    prefix: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', powershellScript],
+    prefix: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', path],
   };
+  if (/\.(cmd|bat)$/i.test(path)) return { command: 'cmd.exe', prefix: ['/d', '/s', '/c', `call "${path}"`] };
   throw new Error(`${name} CLI를 실행할 수 있는 Windows 실행 파일을 찾지 못했어요.`);
 }
 

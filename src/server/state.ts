@@ -1,9 +1,14 @@
-// In-memory office state built from Claude Code and Codex hook events. Nothing here touches disk or the network.
+// Local office state built from Claude Code and Codex hook events. The main-agent roster and recent activity are persisted.
+import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import type { ActivityItem, AgentRecord, ChatMessage, HookEvent, Provider, Snapshot } from '../shared/types.ts';
 
-const ACTIVITY_LIMIT = 16;
+const ACTIVITY_LIMIT = 200;
 const STALE_MS = 4 * 60 * 60 * 1000;
 const FINISHED_SUBAGENT_MS = 20_000;
+const SAVED_AGENT_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+const SAVED_AGENT_LIMIT = 100;
+const SAVE_DEBOUNCE_MS = 500;
 
 const text = (value: unknown, max = 80) => (typeof value === 'string' ? value.slice(0, max) : '');
 
@@ -16,6 +21,122 @@ export class OfficeState {
   private providers = new Set<Provider>();
   private lastSeenAt: Partial<Record<Provider, number>> = {};
   private metrics = { events: 0, tools: 0, turns: 0 };
+  private persistTimer: ReturnType<typeof setTimeout> | undefined;
+  private persistQueue: Promise<void> = Promise.resolve();
+  private persistencePath?: string;
+
+  constructor(persistencePath?: string) { this.persistencePath = persistencePath; }
+
+  /** Restores the small local roster only. Old agents return as resting; chats and activity stay in memory. */
+  async restore(now = Date.now()): Promise<void> {
+    if (!this.persistencePath) return;
+    let saved: unknown;
+    try {
+      saved = JSON.parse(await readFile(this.persistencePath, 'utf8'));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') console.warn(`Could not read remembered agents: ${(error as Error).message}`);
+      return;
+    }
+    if (!saved || typeof saved !== 'object' || !Array.isArray((saved as { agents?: unknown }).agents)) return;
+    const records = (saved as { version?: unknown; agents: unknown[]; activity?: unknown });
+    if (records.version !== 1 && records.version !== 2) return;
+    let discarded = false;
+    const candidates = records.agents
+      .filter((value): value is Record<string, unknown> => Boolean(value && typeof value === 'object'))
+      .map(value => ({ value, updatedAt: Number(value.updatedAt) }))
+      .filter(({ value, updatedAt }) => {
+        const valid = (value.provider === 'claude' || value.provider === 'codex')
+          && typeof value.sessionId === 'string' && value.sessionId.length > 0 && value.sessionId.length <= 100
+          && typeof value.project === 'string' && Number.isFinite(updatedAt) && updatedAt <= now;
+        if (!valid || updatedAt < now - SAVED_AGENT_MAX_AGE_MS) discarded = true;
+        return valid && updatedAt >= now - SAVED_AGENT_MAX_AGE_MS;
+      })
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, SAVED_AGENT_LIMIT);
+
+    for (const { value, updatedAt } of candidates) {
+      const provider = value.provider as Provider;
+      const sessionId = value.sessionId as string;
+      const id = `${provider}:${sessionId}:main`;
+      const project = text(value.project, 48) || (provider === 'codex' ? 'Codex' : 'Claude Code');
+      this.agents.set(id, {
+        id, provider, sessionId, agentId: '',
+        name: text(value.name, 48) || project,
+        project,
+        projectParent: text(value.projectParent, 48),
+        projectId: text(value.projectId, 16),
+        agentType: '', state: 'break', tool: '', isSubagent: false, restored: true,
+        startedAt: Number.isFinite(Number(value.startedAt)) ? Number(value.startedAt) : updatedAt,
+        updatedAt,
+      });
+      if (typeof value.cwd === 'string' && value.cwd.length <= 2048) this.projectPaths.set(id, value.cwd);
+    }
+    if (Array.isArray(records.activity)) {
+      this.activity = records.activity
+        .map(value => this.cleanActivity(value, now))
+        .filter((value): value is ActivityItem => Boolean(value))
+        .sort((a, b) => b.at - a.at)
+        .slice(0, ACTIVITY_LIMIT);
+    }
+    if (discarded || records.agents.length > candidates.length) this.schedulePersist();
+  }
+
+  exportBackup() {
+    return {
+      version: 1,
+      agents: this.rememberedAgents(),
+      activity: this.activity.slice(0, ACTIVITY_LIMIT),
+    };
+  }
+
+  importBackup(input: unknown, now = Date.now()) {
+    if (!input || typeof input !== 'object') throw new Error('백업 파일 형식이 올바르지 않아요.');
+    const backup = input as { version?: unknown; agents?: unknown; activity?: unknown };
+    if (backup.version !== 1 || !Array.isArray(backup.agents)) throw new Error('지원하지 않는 백업 파일이에요.');
+
+    const validAgents = backup.agents
+      .filter((value): value is Record<string, unknown> => Boolean(value && typeof value === 'object'))
+      .map(value => ({ value, updatedAt: Number(value.updatedAt) }))
+      .filter(({ value, updatedAt }) => (value.provider === 'claude' || value.provider === 'codex')
+        && typeof value.sessionId === 'string' && value.sessionId.length > 0 && value.sessionId.length <= 100
+        && typeof value.project === 'string' && Number.isFinite(updatedAt) && updatedAt <= now
+        && updatedAt >= now - SAVED_AGENT_MAX_AGE_MS)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, SAVED_AGENT_LIMIT);
+
+    for (const { value, updatedAt } of validAgents) {
+      const provider = value.provider as Provider;
+      const sessionId = value.sessionId as string;
+      const id = `${provider}:${sessionId}:main`;
+      const project = text(value.project, 48) || (provider === 'codex' ? 'Codex' : 'Claude Code');
+      const cwd = typeof value.cwd === 'string' && value.cwd.length <= 2048 ? value.cwd : '';
+      const existing = this.agents.get(id);
+      if (existing && !existing.restored) {
+        if (cwd && !this.projectPaths.has(id)) this.projectPaths.set(id, cwd);
+        continue;
+      }
+      this.agents.set(id, {
+        id, provider, sessionId, agentId: '',
+        name: text(value.name, 48) || project,
+        project,
+        projectParent: text(value.projectParent, 48),
+        projectId: text(value.projectId, 16),
+        agentType: '', state: 'break', tool: '', isSubagent: false, restored: true,
+        startedAt: Number.isFinite(Number(value.startedAt)) ? Number(value.startedAt) : updatedAt,
+        updatedAt,
+      });
+      if (cwd) this.projectPaths.set(id, cwd);
+    }
+    if (Array.isArray(backup.activity)) {
+      const imported = backup.activity
+        .map(value => this.cleanActivity(value, now))
+        .filter((value): value is ActivityItem => Boolean(value));
+      const merged = new Map([...imported, ...this.activity].map(item => [item.id, item]));
+      this.activity = [...merged.values()].sort((a, b) => b.at - a.at).slice(0, ACTIVITY_LIMIT);
+    }
+    this.schedulePersist();
+    return { agents: validAgents.length, activity: this.activity.length };
+  }
 
   /** Applies one hook event. Returns false when the event is not usable. */
   handle(data: HookEvent, now = Date.now()): boolean {
@@ -45,9 +166,10 @@ export class OfficeState {
           this.agents.delete(id);
           this.projectPaths.delete(id);
         } else {
-          this.agents.set(id, { ...agent, state: 'break', tool: '', updatedAt: now });
+          this.agents.set(id, { ...agent, state: 'break', tool: '', restored: false, updatedAt: now });
         }
       }
+      this.schedulePersist();
       return true;
     }
 
@@ -66,6 +188,7 @@ export class OfficeState {
       state: previous?.state ?? 'break',
       tool: previous?.tool ?? '',
       isSubagent,
+      restored: false,
       startedAt: previous?.startedAt ?? now,
       updatedAt: now,
     };
@@ -115,6 +238,7 @@ export class OfficeState {
 
     this.agents.set(key, agent);
     this.log(agent, event, toolName, now);
+    this.schedulePersist();
     return true;
   }
 
@@ -134,7 +258,7 @@ export class OfficeState {
   chatTarget(id: string) {
     const agent = this.agents.get(id);
     if (!agent) return undefined;
-    return { id: agent.id, provider: agent.provider, sessionId: agent.sessionId, cwd: this.projectPaths.get(id), state: agent.state, isSubagent: agent.isSubagent };
+    return { id: agent.id, name: agent.name, provider: agent.provider, sessionId: agent.sessionId, cwd: this.projectPaths.get(id), state: agent.state, isSubagent: agent.isSubagent };
   }
 
   chatHistory(agentId: string) {
@@ -165,6 +289,61 @@ export class OfficeState {
         this.projectPaths.delete(id);
       }
     }
+  }
+
+  private schedulePersist() {
+    if (!this.persistencePath) return;
+    if (this.persistTimer) clearTimeout(this.persistTimer);
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = undefined;
+      this.persistQueue = this.persistQueue
+        .catch(() => {})
+        .then(() => this.persist())
+        .catch(error => console.warn(`Could not save remembered agents: ${(error as Error).message}`));
+    }, SAVE_DEBOUNCE_MS);
+    this.persistTimer.unref?.();
+  }
+
+  private async persist() {
+    if (!this.persistencePath) return;
+    const agents = this.rememberedAgents();
+    const temporaryPath = `${this.persistencePath}.${process.pid}.tmp`;
+    await mkdir(dirname(this.persistencePath), { recursive: true });
+    await writeFile(temporaryPath, JSON.stringify({ version: 2, agents, activity: this.activity.slice(0, ACTIVITY_LIMIT) }), 'utf8');
+    await rename(temporaryPath, this.persistencePath);
+  }
+
+  private rememberedAgents() {
+    return [...this.agents.values()]
+      .filter(agent => !agent.isSubagent)
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, SAVED_AGENT_LIMIT)
+      .map(agent => ({
+        provider: agent.provider,
+        sessionId: agent.sessionId,
+        name: agent.name,
+        project: agent.project,
+        projectParent: agent.projectParent,
+        projectId: agent.projectId,
+        startedAt: agent.startedAt,
+        updatedAt: agent.updatedAt,
+        cwd: this.projectPaths.get(agent.id),
+      }));
+  }
+
+  private cleanActivity(input: unknown, now: number): ActivityItem | undefined {
+    if (!input || typeof input !== 'object') return undefined;
+    const item = input as Record<string, unknown>;
+    if ((item.provider !== 'claude' && item.provider !== 'codex') || typeof item.at !== 'number'
+      || !Number.isFinite(item.at) || item.at > now || item.at < now - SAVED_AGENT_MAX_AGE_MS) return undefined;
+    const value = (key: string, max: number) => typeof item[key] === 'string' ? (item[key] as string).slice(0, max) : '';
+    if (!value('id', 120) || !value('sourceId', 220) || !value('text', 120)) return undefined;
+    return {
+      id: value('id', 120), at: item.at, provider: item.provider,
+      sourceId: value('sourceId', 220), agent: value('agent', 48),
+      project: value('project', 48), projectParent: value('projectParent', 48),
+      projectId: value('projectId', 16), text: value('text', 120), tool: value('tool', 60),
+    };
   }
 
   private log(agent: AgentRecord, event: string, tool: string, now: number) {

@@ -16,6 +16,8 @@ export interface AgentRecord {
   state: AgentState;
   tool: string;
   isSubagent: boolean;
+  /** True until a new hook event confirms this restored roster entry is live again. */
+  restored?: boolean;
   startedAt: number;
   updatedAt: number;
 }
@@ -41,6 +43,23 @@ export interface Snapshot {
   activity: ActivityItem[];
   metrics: { events: number; tools: number; turns: number };
   updatedAt: number;
+}
+
+export type MeetingState = 'queued' | 'speaking' | 'complete' | 'error';
+export interface MeetingTurn {
+  agentId: string;
+  name: string;
+  provider: Provider;
+  state: MeetingState;
+  text: string;
+}
+export interface AgentMeeting {
+  id: string;
+  agenda: string;
+  status: 'running' | 'complete' | 'complete_with_errors';
+  startedAt: number;
+  updatedAt: number;
+  turns: MeetingTurn[];
 }
 
 export interface ChatMessage {

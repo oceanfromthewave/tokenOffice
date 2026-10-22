@@ -94,7 +94,7 @@ function setUpUpdates() {
 app.whenReady().then(async () => {
   const icon = join(app.getAppPath(), 'build/icon.png');
   try {
-    await startServer(port);
+    await startServer(port, join(app.getPath('userData'), 'remembered-agents.json'));
   } catch (error) {
     // Another copy (for example `npm start`) already owns the port; show that one instead of failing.
     console.warn(`Hook receiver not started here: ${(error as Error).message}`);
