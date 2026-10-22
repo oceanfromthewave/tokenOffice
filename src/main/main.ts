@@ -3,6 +3,7 @@ import { app, BrowserWindow, Menu, Tray, nativeImage, type MenuItemConstructorOp
 import updater from 'electron-updater';
 import { join } from 'node:path';
 import { connectHooks, disconnectHooks, refreshHookScript, setupStatus } from '../server/hooksetup.ts';
+import { codexSetupStatus, connectCodexHooks, disconnectCodexHooks, refreshCodexHookScript } from '../server/codex-hooksetup.ts';
 import { DEFAULT_PORT, HOST, startServer } from '../server/server.ts';
 
 const { autoUpdater } = updater; // CommonJS package: take the named export off the default
@@ -12,7 +13,8 @@ let win: BrowserWindow | undefined;
 let tray: Tray | undefined;
 let quitting = false;
 let updateReady = ''; // version waiting to be installed
-let hooked = false; // our hook is registered in ~/.claude/settings.json
+let claudeHooked = false;
+let codexHooked = false;
 
 if (!app.requestSingleInstanceLock()) app.quit();
 app.on('second-instance', () => { win?.show(); win?.focus(); });
@@ -25,7 +27,8 @@ function notify(title: string, content: string) {
 function buildMenu() {
   const items: MenuItemConstructorOptions[] = [
     { label: '열기', click: () => win?.show() },
-    { label: 'Claude Code 연결', type: 'checkbox', checked: hooked, click: () => void toggleHooks() },
+    { label: 'Claude Code 연결', type: 'checkbox', checked: claudeHooked, click: () => void toggleHooks('claude') },
+    { label: 'Codex 연결', type: 'checkbox', checked: codexHooked, click: () => void toggleHooks('codex') },
     {
       label: '윈도우 시작 시 자동 실행', type: 'checkbox', checked: app.getLoginItemSettings().openAtLogin,
       click: item => app.setLoginItemSettings({ openAtLogin: item.checked }),
@@ -42,13 +45,20 @@ function buildMenu() {
   tray?.setContextMenu(Menu.buildFromTemplate(items));
 }
 
-async function toggleHooks() {
+async function toggleHooks(provider: 'claude' | 'codex') {
   try {
-    const status = await (hooked ? disconnectHooks() : connectHooks());
-    hooked = status.connected;
-    notify('tokenOffice', hooked
-      ? (status.node ? 'Claude Code와 연결했어요. 새로 여는 세션부터 사무실에 나타나요.' : '연결했지만 Node.js가 없어서 훅이 실행되지 않아요. nodejs.org에서 설치해 주세요.')
-      : 'Claude Code 연결을 해제했어요.');
+    const current = provider === 'claude' ? claudeHooked : codexHooked;
+    const status = provider === 'claude'
+      ? await (current ? disconnectHooks() : connectHooks())
+      : await (current ? disconnectCodexHooks() : connectCodexHooks());
+    if (provider === 'claude') claudeHooked = status.connected;
+    else codexHooked = status.connected;
+    const name = provider === 'claude' ? 'Claude Code' : 'Codex';
+    notify('tokenOffice', status.connected
+      ? (!status.node ? '연결했지만 Node.js가 없어 훅이 실행되지 않아요. Node.js를 설치해 주세요.'
+        : provider === 'codex' ? 'Codex 훅을 등록했어요. Codex CLI의 /hooks에서 tokenOffice 훅을 검토하고 신뢰해 주세요.'
+          : 'Claude Code와 연결했어요. 새로 여는 세션부터 사무실에 나타나요.')
+      : `${name} 연결을 해제했어요.`);
   } catch (error) {
     notify('연결 설정 실패', (error as Error).message);
   }
@@ -97,14 +107,21 @@ app.whenReady().then(async () => {
   win.loadURL(`http://${HOST}:${port}/`);
   // Closing the window keeps the app (and the hook receiver) alive in the tray.
   win.on('close', event => { if (!quitting) { event.preventDefault(); win?.hide(); } });
-  // the dashboard can also connect/disconnect, so refresh the tray's checkbox whenever the window comes back
-  win.on('focus', () => void setupStatus().then(status => { hooked = status.connected; buildMenu(); }));
+  // The dashboard can also connect/disconnect, so refresh the tray checkboxes when the window returns.
+  win.on('focus', () => void Promise.all([setupStatus(), codexSetupStatus()]).then(([claude, codex]) => {
+    claudeHooked = claude.connected;
+    codexHooked = codex.connected;
+    buildMenu();
+  }));
 
   tray = new Tray(nativeImage.createFromPath(icon).resize({ width: 16 }));
   tray.setToolTip('tokenOffice');
   tray.on('click', () => win?.show());
-  hooked = (await setupStatus()).connected;
+  const [claude, codex] = await Promise.all([setupStatus(), codexSetupStatus()]);
+  claudeHooked = claude.connected;
+  codexHooked = codex.connected;
   void refreshHookScript();
+  void refreshCodexHookScript();
   buildMenu();
   setUpUpdates();
 });

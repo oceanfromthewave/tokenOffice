@@ -1,14 +1,15 @@
-// Dashboard: polls the local hook receiver and shows live Claude Code sessions; plays a demo until the first event arrives.
+// Dashboard: polls the local hook receiver for Claude Code and Codex; plays a demo until the first event arrives.
 import { LOOKS, type Look } from '../shared/pixels.ts';
-import type { ActivityItem, AgentRecord, AgentState, Snapshot } from '../shared/types.ts';
+import type { ActivityItem, AgentRecord, AgentState, Provider, Snapshot } from '../shared/types.ts';
 import { Office, type OfficeAgent } from './office/office.ts';
 import { headUrl, propUrl } from './office/sprites.ts';
 
 /** `key` names whoever this is across sessions (project for a session, type for a subagent) so a rename sticks. */
-interface ViewAgent extends OfficeAgent { role: string; key: string; baseName: string }
+interface ViewAgent extends OfficeAgent { role: string; key: string; baseName: string; provider?: Provider }
 interface Stats { tools: number; turns: number; events: number }
 
 const LABEL: Record<AgentState, string> = { working: '작업 중', break: '휴식 중', done: '완료', waiting: '응답 대기', error: '오류' };
+const PROVIDER_NAME: Record<Provider, string> = { claude: 'Claude Code', codex: 'Codex' };
 const POLL_MS = 1500;
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = '') => {
@@ -164,7 +165,9 @@ function fromRecords(records: AgentRecord[]): ViewAgent[] {
   const seen = new Map<string, number>();
   return records.map(r => {
     if (!looks.has(r.id)) looks.set(r.id, r.isSubagent ? 'bot' : LOOKS[nextLook++ % LOOKS.length]!);
-    const key = r.isSubagent ? `sub:${r.agentType || r.name}` : `main:${r.project}`;
+    const key = r.provider === 'claude'
+      ? r.isSubagent ? `sub:${r.agentType || r.name}` : `main:${r.project}`
+      : r.isSubagent ? `codex:sub:${r.agentType || r.name}` : `codex:main:${r.project}`;
     const profile = profiles[key] ?? {};
     const generated = autoName(r, taken);
     taken.add(generated);
@@ -173,6 +176,7 @@ function fromRecords(records: AgentRecord[]): ViewAgent[] {
     seen.set(name, count);
     return {
       id: r.id,
+      provider: r.provider,
       key,
       baseName: generated,
       name: count > 1 ? `${name} ${count}` : name,
@@ -181,7 +185,7 @@ function fromRecords(records: AgentRecord[]): ViewAgent[] {
       tool: r.tool,
       isSubagent: r.isSubagent,
       // the folder (or the subagent's type) still shows under the name
-      role: [r.isSubagent ? r.agentType || '서브에이전트' : r.project, r.tool].filter(Boolean).join(' · '),
+      role: [PROVIDER_NAME[r.provider], r.isSubagent ? r.agentType || '서브에이전트' : r.project, r.tool].filter(Boolean).join(' · '),
     };
   });
 }
@@ -192,16 +196,16 @@ function applySnapshot(snapshot: Snapshot) {
   live = true;
   stopDemo();
   agents = fromRecords(snapshot.agents);
-  $('#live-text').textContent = 'Claude Code 연결됨';
+  const sourceText = snapshot.providers.map(provider => PROVIDER_NAME[provider]).join(' + ') || '연동 도구';
+  $('#live-text').textContent = `${sourceText} 연결됨`;
   $('#live-pill').classList.add('connected');
-  $('#hero-connect').hidden = true;
-  $('#hero-text').textContent = agents.length ? 'Claude Code 세션의 실제 상태를 보여주고 있어요.' : 'Claude Code 세션이 끝났어요. 새 세션을 기다리고 있어요.';
+  $('#hero-text').textContent = agents.length ? `${sourceText} 세션의 실제 상태를 보여주고 있어요.` : `${sourceText} 세션을 기다리고 있어요.`;
   render(snapshot.metrics, first);
-  renderActivity(snapshot.activity.map((a: ActivityItem) => ({ agent: a.agent, text: a.text, detail: [a.project, a.tool].filter(Boolean).join(' · '), at: a.at, icon: iconFor(a.text, a.tool) })));
-  renderQueue([{ icon: 'i', title: '이 대시보드는 상태를 보여주기만 해요', detail: '작업은 Claude Code 창에서 직접 맡겨 주세요.', tag: '안내' }]);
+  renderActivity(snapshot.activity.map((a: ActivityItem) => ({ agent: a.agent, text: a.text, detail: [PROVIDER_NAME[a.provider], a.project, a.tool].filter(Boolean).join(' · '), at: a.at, icon: iconFor(a.text, a.tool) })));
+  renderQueue([{ icon: 'i', title: '이 대시보드는 상태를 보여주기만 해요', detail: '작업은 연결된 도구에서 직접 맡겨 주세요.', tag: '안내' }]);
   const input = $<HTMLInputElement>('#task-input');
   input.disabled = true;
-  input.placeholder = 'Claude Code에 직접 입력해 주세요';
+  input.placeholder = 'Claude Code나 Codex에 직접 입력해 주세요';
   $<HTMLButtonElement>('.send-btn').disabled = true;
 }
 
@@ -308,50 +312,65 @@ $('#task-form').addEventListener('submit', event => {
   toast(`${agent.name}에게 맡겼어요 (데모)`);
 });
 
-// ---------------- Claude Code connection ----------------
+// ---------------- tool connections ----------------
 interface SetupStatus { connected: boolean; node: boolean; settingsPath: string }
-let setup: SetupStatus | undefined;
+type ToolProvider = 'claude' | 'codex';
+const setups: Partial<Record<ToolProvider, SetupStatus>> = {};
+const SETUP_UI: Record<ToolProvider, { name: string; url: string }> = {
+  claude: { name: 'Claude Code', url: '/api/setup' },
+  codex: { name: 'Codex', url: '/api/setup/codex' },
+};
 
-function renderSetup() {
+function renderSetup(provider: ToolProvider) {
+  const setup = setups[provider];
   if (!setup) return;
-  $('#setup-state').textContent = setup.connected ? '연결됨' : '연결 안 됨';
-  $('#setup-note').textContent = !setup.node
-    ? 'Node.js가 있어야 훅이 실행돼요. nodejs.org에서 설치한 뒤 Claude Code를 다시 열어 주세요.'
-    : setup.connected ? '새로 여는 Claude Code 세션부터 사무실에 나타나요.'
-    : '누르면 Claude Code 설정에 훅을 추가해요. 다른 설정은 그대로 두고, 바꾸기 전 파일은 백업해요.';
-  const button = $<HTMLButtonElement>('#setup-button');
+  const prefix = provider === 'claude' ? 'claude' : 'codex';
+  $(`#${prefix}-setup-state`).textContent = setup.connected ? (provider === 'codex' ? '등록됨' : '연결됨') : '연결 안 됨';
+  $(`#${prefix}-setup-note`).textContent = !setup.node
+    ? 'Node.js가 있어야 훅이 실행돼요. 설치한 뒤 다시 연결해 주세요.'
+    : provider === 'codex'
+      ? setup.connected ? 'Codex CLI에서 /hooks를 열고 tokenOffice 훅을 검토하고 신뢰하면 새 세션부터 보여요.'
+        : '누르면 Codex 사용자 설정에 훅을 추가해요. 기존 설정은 보존하고 백업해요.'
+      : setup.connected ? '새로 여는 Claude Code 세션부터 사무실에 나타나요.'
+        : '누르면 Claude Code 사용자 설정에 훅을 추가해요. 기존 설정은 보존하고 백업해요.';
+  const button = $<HTMLButtonElement>(`#${prefix}-setup-button`);
   button.hidden = false;
   button.textContent = setup.connected ? '연결 해제' : '연결하기';
-  $('#hero-connect').hidden = setup.connected || live;
 }
 
-async function loadSetup() {
-  try {
-    const response = await fetch('/api/setup', { cache: 'no-store' });
-    if (response.ok) { setup = (await response.json()) as SetupStatus; renderSetup(); }
-  } catch { /* the receiver is down; the sync text already says so */ }
+async function loadSetups() {
+  await Promise.all((Object.keys(SETUP_UI) as ToolProvider[]).map(async provider => {
+    try {
+      const response = await fetch(SETUP_UI[provider].url, { cache: 'no-store' });
+      if (response.ok) { setups[provider] = (await response.json()) as SetupStatus; renderSetup(provider); }
+    } catch { /* the receiver is down; the sync text already says so */ }
+  }));
 }
 
-async function toggleSetup() {
-  const buttons = [$<HTMLButtonElement>('#setup-button'), $<HTMLButtonElement>('#hero-connect')];
-  buttons.forEach(b => { b.disabled = true; });
+async function toggleSetup(provider: ToolProvider) {
+  const setup = setups[provider];
+  const button = $<HTMLButtonElement>(`#${provider}-setup-button`);
+  button.disabled = true;
   try {
-    const response = await fetch(`/api/setup/${setup?.connected ? 'disconnect' : 'connect'}`, { method: 'POST' });
+    const endpoint = provider === 'codex' ? '/api/setup/codex' : '/api/setup';
+    const response = await fetch(`${endpoint}/${setup?.connected ? 'disconnect' : 'connect'}`, { method: 'POST' });
     const body = (await response.json()) as SetupStatus & { error?: string };
     if (!response.ok) { toast(body.error ?? '연결 설정을 바꾸지 못했어요.'); return; }
-    setup = body;
-    renderSetup();
-    toast(setup.connected ? '연결했어요. Claude Code에서 새 세션을 열어 보세요.' : 'Claude Code 연결을 해제했어요.');
+    setups[provider] = body;
+    renderSetup(provider);
+    toast(body.connected
+      ? provider === 'codex' ? 'Codex 훅을 등록했어요. Codex CLI의 /hooks에서 검토하고 신뢰해 주세요.' : '연결했어요. 새 Claude Code 세션부터 나타나요.'
+      : `${SETUP_UI[provider].name} 연결을 해제했어요.`);
   } catch {
     toast('수신기에 연결할 수 없어요.');
   } finally {
-    buttons.forEach(b => { b.disabled = false; });
+    button.disabled = false;
   }
 }
 
-$('#setup-button').addEventListener('click', () => void toggleSetup());
-$('#hero-connect').addEventListener('click', () => void toggleSetup());
-window.addEventListener('focus', () => void loadSetup());
+$('#claude-setup-button').addEventListener('click', () => void toggleSetup('claude'));
+$('#codex-setup-button').addEventListener('click', () => void toggleSetup('codex'));
+window.addEventListener('focus', () => void loadSetups());
 
 // ---------------- rename ----------------
 const dialog = $<HTMLDialogElement>('#rename-dialog');
@@ -424,6 +443,6 @@ $('#brand-mark').style.backgroundImage = `url(${propUrl('house')})`;
 updateClock();
 setInterval(updateClock, 30_000);
 startDemo();
-void loadSetup();
+void loadSetups();
 poll();
 setInterval(poll, POLL_MS);

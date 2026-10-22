@@ -1,9 +1,11 @@
 // Shapes exchanged between the hook receiver (server) and the dashboard (renderer).
 
 export type AgentState = 'working' | 'break' | 'done' | 'waiting' | 'error';
+export type Provider = 'claude' | 'codex';
 
 export interface AgentRecord {
   id: string;
+  provider: Provider;
   sessionId: string;
   agentId: string;
   name: string;
@@ -19,6 +21,7 @@ export interface AgentRecord {
 export interface ActivityItem {
   id: string;
   at: number;
+  provider: Provider;
   agent: string;
   project: string;
   text: string;
@@ -27,14 +30,16 @@ export interface ActivityItem {
 
 export interface Snapshot {
   connected: boolean;
+  providers: Provider[];
   agents: AgentRecord[];
   activity: ActivityItem[];
   metrics: { events: number; tools: number; turns: number };
   updatedAt: number;
 }
 
-/** What the Claude Code hook forwards. Everything is optional because it comes from outside. */
+/** Sanitized fields forwarded by either tool's hook. Everything is optional because it comes from outside. */
 export interface HookEvent {
+  provider?: unknown;
   event?: unknown;
   sessionId?: unknown;
   agentId?: unknown;

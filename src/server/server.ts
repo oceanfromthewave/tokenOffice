@@ -1,9 +1,10 @@
-// Local-only HTTP server: receives Claude Code hook events and serves the built dashboard.
+// Local-only HTTP server: receives Claude Code and Codex hook events and serves the built dashboard.
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { connectHooks, disconnectHooks, setupStatus } from './hooksetup.ts';
+import { codexSetupStatus, connectCodexHooks, disconnectCodexHooks } from './codex-hooksetup.ts';
 import { OfficeState } from './state.ts';
 
 export const HOST = '127.0.0.1';
@@ -78,11 +79,28 @@ export function startServer(port = Number(process.env.TOKEN_OFFICE_PORT) || DEFA
         return json(response, 400, { error: 'Invalid or oversized request' });
       }
     }
-    // Claude Code connection: read, add or remove our hook in ~/.claude/settings.json
+    if (request.method === 'POST' && pathname === '/api/hooks/codex') {
+      try {
+        const data = await readJson(request);
+        const ok = typeof data === 'object' && data !== null && office.handle({ ...data, provider: 'codex' });
+        return ok ? json(response, 202, { accepted: true }) : json(response, 400, { error: 'Invalid Codex hook event' });
+      } catch {
+        return json(response, 400, { error: 'Invalid or oversized request' });
+      }
+    }
+    // Provider connection endpoints update only tokenOffice's entries in each tool's user settings.
     if (request.method === 'GET' && pathname === '/api/setup') return json(response, 200, await setupStatus());
+    if (request.method === 'GET' && pathname === '/api/setup/codex') return json(response, 200, await codexSetupStatus());
     if (request.method === 'POST' && (pathname === '/api/setup/connect' || pathname === '/api/setup/disconnect')) {
       try {
         return json(response, 200, await (pathname.endsWith('/connect') ? connectHooks() : disconnectHooks()));
+      } catch (error) {
+        return json(response, 500, { error: (error as Error).message });
+      }
+    }
+    if (request.method === 'POST' && (pathname === '/api/setup/codex/connect' || pathname === '/api/setup/codex/disconnect')) {
+      try {
+        return json(response, 200, await (pathname.endsWith('/connect') ? connectCodexHooks() : disconnectCodexHooks()));
       } catch (error) {
         return json(response, 500, { error: (error as Error).message });
       }
@@ -95,7 +113,7 @@ export function startServer(port = Number(process.env.TOKEN_OFFICE_PORT) || DEFA
     server.once('error', reject);
     server.listen(port, HOST, () => {
       console.log(`tokenOffice is running at http://${HOST}:${port}`);
-      console.log('Claude Code hook events stay on this computer and are held in memory.');
+      console.log('Claude Code and Codex hook events stay on this computer and are held in memory.');
       resolve(server);
     });
   });

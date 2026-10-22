@@ -1,4 +1,5 @@
 const path = require('node:path');
+const provider = process.argv[2] === 'codex' ? 'codex' : 'claude';
 
 // Tool inputs (e.g. a Write of a big file) can be large; only a few small fields are forwarded, but the JSON must parse.
 const MAX_INPUT = 8_000_000;
@@ -15,6 +16,7 @@ process.stdin.on('end', async () => {
   try {
     const input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     const event = {
+      provider,
       event: input.hook_event_name,
       sessionId: input.session_id,
       project: input.cwd ? path.basename(input.cwd) : '',
@@ -25,8 +27,8 @@ process.stdin.on('end', async () => {
       notificationType: input.notification_type,
     };
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 900);
-    await fetch('http://127.0.0.1:47821/api/hooks/claude', {
+    const timeout = setTimeout(() => controller.abort(), provider === 'codex' ? 350 : 900);
+    await fetch(`http://127.0.0.1:47821/api/hooks/${provider}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(event),

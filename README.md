@@ -1,8 +1,8 @@
 # tokenOffice
 
-A pixel-art office that shows your Claude Code sessions and subagents at work. Each session is a worker at a desk. They type while tools run and raise a speech bubble when they need your permission. When a turn ends they walk to the lounge. Subagents come in through the door as robots and leave when they finish.
+A pixel-art office that shows your Claude Code and Codex sessions and subagents at work. Each session is a worker at a desk. They type while tools run and raise a speech bubble when they need your permission. When a turn ends they walk to the lounge. Subagents come in through the door as robots and leave when they finish.
 
-Everything stays on this computer. The app listens only on `127.0.0.1` and keeps hook events in memory. The hook forwards event names, session IDs, the project folder name, tool names and subagent type. It never sends prompts, tool inputs, notification text, file contents or transcript paths.
+Everything stays on this computer. The app listens only on `127.0.0.1` and keeps hook events in memory. The hooks forward event names, session IDs, the project folder name, tool names and subagent type. They never send prompts, tool inputs, notification text, file contents or transcript paths.
 
 ## Install (Windows)
 
@@ -29,6 +29,12 @@ Each entry looks like:
 
 The hook is async and best-effort, so a closed dashboard never slows Claude Code down. The office shows a demo until the first event arrives. It switches to "Claude Code 연결됨" as soon as a session sends anything.
 
+## Connect Codex
+
+Press "Codex 연결하기" in the app or tick "Codex 연결" in the tray menu. The app copies its hook to `~/.codex/hooks/token-office.cjs` and adds its lifecycle hooks to `~/.codex/hooks.json`. Existing Codex settings and other hook entries are preserved; the previous hooks file is backed up as `hooks.json.tokenoffice-backup`. "연결 해제" removes only tokenOffice's entries.
+
+Codex requires you to review and trust a new or changed hook before it runs. After connecting, run `/hooks` in Codex CLI, then review and trust the tokenOffice hooks. New Codex sessions appear after that. The hook runs with Node.js, so `node` must be on your PATH.
+
 ## Use
 
 - Click a worker, in the office or the sidebar, to see what they are doing.
@@ -54,7 +60,7 @@ If the installed app is running, it owns port 47821. To run another copy side by
 ### Layout
 
 - `src/shared/` holds the pixel art as data (`pixels.ts`) and the types shared by both sides.
-- `src/server/` holds the hook receiver. `state.ts` is a pure reducer from hook events; `server.ts` is the local-only HTTP server.
+- `src/server/` holds the hook receiver and connection setup for both tools. `state.ts` is a pure reducer from hook events; `server.ts` is the local-only HTTP server.
 - `src/main/` is the Electron tray shell.
 - `src/renderer/` is the dashboard UI. Under `office/`:
   - `layout.ts`: the floor plan

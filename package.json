@@ -1,10 +1,10 @@
 {
   "name": "token-office",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "type": "module",
   "main": "out/main/main.js",
-  "description": "A pixel-art office that shows your Claude Code sessions and subagents at work",
+  "description": "A pixel-art office that shows your Claude Code and Codex sessions at work",
   "author": "oceanfromthewave",
   "scripts": {
     "dev": "vite",

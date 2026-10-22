@@ -21,9 +21,14 @@
       <div class="agent-list" id="agent-list"></div>
       <div class="sidebar-bottom">
         <div class="usage-card setup-card">
-          <div class="usage-head"><span>Claude Code 연결</span><strong id="setup-state">확인 중</strong></div>
-          <div class="usage-note" id="setup-note"></div>
-          <button type="button" class="ghost-btn setup-btn" id="setup-button" hidden>연결하기</button>
+          <div class="usage-head"><span>Claude Code</span><strong id="claude-setup-state">확인 중</strong></div>
+          <div class="usage-note" id="claude-setup-note"></div>
+          <button type="button" class="ghost-btn setup-btn" id="claude-setup-button" hidden>연결하기</button>
+        </div>
+        <div class="usage-card setup-card">
+          <div class="usage-head"><span>Codex</span><strong id="codex-setup-state">확인 중</strong></div>
+          <div class="usage-note" id="codex-setup-note"></div>
+          <button type="button" class="ghost-btn setup-btn" id="codex-setup-button" hidden>연결하기</button>
         </div>
         <div class="usage-card">
           <div class="usage-head"><span>받은 훅 이벤트</span><strong id="event-count">0</strong></div>
@@ -36,7 +41,7 @@
       <header class="topbar">
         <div class="crumb"><button class="icon-btn mobile-menu" id="menu-button" aria-label="메뉴 열기">☰</button><strong>가상 사무실</strong></div>
         <div class="top-actions">
-          <div class="live-pill" id="live-pill" title="Claude Code가 훅 이벤트를 보내면 자동으로 실제 모드로 바뀌어요"><i class="live-dot"></i><span id="live-text">데모 모드 · 연결 대기</span></div>
+          <div class="live-pill" id="live-pill" title="연동된 도구가 훅 이벤트를 보내면 실제 상태로 바뀌어요"><i class="live-dot"></i><span id="live-text">데모 모드 · 연결 대기</span></div>
         </div>
       </header>
 
@@ -44,9 +49,9 @@
         <div>
           <div class="eyebrow" id="current-date"></div>
           <h1 id="greeting">안녕하세요</h1>
-          <p id="hero-text">지금은 데모 화면이에요. Claude Code 세션을 시작하면 실제 상태로 바뀌어요.</p>
+          <p id="hero-text">지금은 데모 화면이에요. Claude Code나 Codex 세션을 시작하면 실제 상태로 바뀌어요.</p>
         </div>
-        <div class="hero-controls"><button type="button" class="send-btn" id="hero-connect" hidden>Claude Code 연결하기</button><span class="date-button" id="current-time"></span></div>
+        <div class="hero-controls"><span class="date-button" id="current-time"></span></div>
       </section>
 
       <section class="summary" aria-label="요약">
@@ -63,7 +68,7 @@
         </div>
         <div class="scene" id="scene">
           <canvas id="office-canvas" role="img" aria-label="에이전트들이 일하는 픽셀 사무실"></canvas>
-          <div class="empty-office" id="empty-office" hidden>Claude Code 세션을 기다리고 있어요</div>
+          <div class="empty-office" id="empty-office" hidden>Claude Code 또는 Codex 세션을 기다리고 있어요</div>
         </div>
         <div class="scene-footer"><span>일하면 자리로, 쉬면 휴게실로 가요</span><span><i class="live-dot"></i><span id="sync-text">방금 업데이트</span></span></div>
       </section>
