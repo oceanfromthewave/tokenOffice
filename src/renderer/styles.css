@@ -154,7 +154,7 @@ button:focus-visible, input:focus-visible, a:focus-visible, canvas:focus-visible
 .field { display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
 .field input { padding: 8px 10px; font-size: 15px; color: var(--text); background: var(--bg); border: 2px solid var(--line); outline: 0; }
 .field input:focus { border-color: var(--lamp); }
-.look-picker { display: flex; gap: 8px; margin: 16px 0 0; padding: 0; border: 0; }
+.look-picker { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; padding: 0; border: 0; }
 .look-picker legend { margin-bottom: 6px; font-size: 13px; color: var(--muted); }
 .look-picker label { cursor: pointer; }
 .look-picker input { position: absolute; opacity: 0; }
