@@ -2,6 +2,7 @@
 // two frames each (typing / walking), plus small desk and furniture props.
 // Run: node tools/make-sprites.mjs
 import { writeFileSync } from 'node:fs';
+import { deflateSync } from 'node:zlib';
 
 const W = 16, H = 23;
 const OUTLINE = '#241c33';
@@ -30,15 +31,20 @@ function outline(g) {
 }
 
 // shirt, arms, legs shared by every worker; hand colour differs
-function body(g, [leftHand, rightHand], shirt, shade, hand, legs, shoes, trim) {
+function body(g, [leftHand, rightHand], shirt, shade, hand, legs, shoes, trim, lift) {
   const { px, rect } = tools(g);
   rect(4, 14, 8, 6, shirt); rect(11, 14, 1, 6, shade); rect(4, 19, 8, 1, shade);
   if (trim) { rect(6, 14, 4, 1, 'b'); px(9, 16, 'b'); px(9, 17, 'b'); }
   for (const [x, y] of [[3, leftHand], [12, rightHand]]) { rect(x, 15, 1, y - 15, shirt); px(x, y, hand); }
-  rect(5, 20, 2, 2, legs); rect(9, 20, 2, 2, legs); rect(4, 22, 3, 1, shoes); rect(9, 22, 3, 1, shoes);
+  // a lifted leg is one row shorter, which is what makes the walk cycle read as steps
+  for (const [x, side] of [[5, 'L'], [9, 'R']]) {
+    const up = lift === side;
+    rect(x, 20, 2, up ? 1 : 2, legs);
+    rect(x - 1, up ? 21 : 22, 3, 1, shoes);
+  }
 }
 
-function person(c, hands) {
+function person(c, hands, lift) {
   const g = blank(); const { px, rect } = tools(g);
   if (c.style === 'long') rect(2, 3, 12, 11, 'h');
   if (c.style === 'bun') rect(6, 0, 4, 2, 'h');
@@ -59,17 +65,17 @@ function person(c, hands) {
   }
   if (c.acc === 'phones') { rect(2, 1, 12, 1, 'E'); rect(2, 2, 1, 4, 'E'); rect(13, 2, 1, 4, 'E'); rect(1, 6, 2, 4, 'E'); rect(13, 6, 2, 4, 'E'); }
   if (c.acc === 'cap') { rect(2, 1, 12, 3, 'C'); rect(2, 4, 12, 1, 'D'); }
-  body(g, hands, 's', 't', 'f', 'p', 'z', true);
+  body(g, hands, 's', 't', 'f', 'p', 'z', true, lift);
   return outline(g);
 }
 
-function robot(hands) {
+function robot(hands, lift) {
   const g = blank(); const { px, rect } = tools(g);
   rect(7, 0, 2, 1, 'r'); rect(7, 1, 2, 2, 'N');
   rect(2, 3, 12, 9, 'M'); rect(3, 11, 10, 1, 'N'); rect(1, 6, 1, 3, 'N'); rect(14, 6, 1, 3, 'N');
   rect(3, 5, 10, 5, 'S'); rect(5, 6, 2, 2, 'c'); rect(9, 6, 2, 2, 'c'); rect(6, 9, 4, 1, 'c');
   rect(6, 12, 4, 2, 'N');
-  body(g, hands, 'M', 'N', 'd', 'N', 'z', false);
+  body(g, hands, 'M', 'N', 'd', 'N', 'z', false, lift);
   rect(6, 16, 4, 2, 'c');
   return outline(g);
 }
@@ -92,10 +98,12 @@ const dataUri = svg => `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 const svgOf = (w, h, inner) => `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 ${w} ${h}' shape-rendering='crispEdges'>${inner}</svg>`;
 
 function sheet(look) {
-  const make = look === 'bot' ? hands => robot(hands) : hands => person(people[look], hands);
+  const make = look === 'bot' ? (hands, lift) => robot(hands, lift) : (hands, lift) => person(people[look], hands, lift);
   const colors = { ...common, ...(look === 'bot' ? bot : people[look]), o: OUTLINE };
-  const inner = toPaths(make([19, 18]), colors, W, 0) + toPaths(make([18, 19]), colors, W, W);
-  return `[data-look="${look}"] { --sprite: ${dataUri(svgOf(W * 2, H, inner))}; }`;
+  // frames: 0-1 typing (hands swap), 2-3 walking (opposite leg lifted, arms swing)
+  const frames = [make([19, 18]), make([18, 19]), make([19, 17], 'L'), make([17, 19], 'R')];
+  const inner = frames.map((rows, n) => toPaths(rows, colors, W, n * W)).join('');
+  return `[data-look="${look}"] { --sprite: ${dataUri(svgOf(W * frames.length, H, inner))}; }`;
 }
 
 // ---- props: desk items and furniture, same 1px outline ----
@@ -132,3 +140,31 @@ const css = [
 ].join('\n') + '\n';
 writeFileSync(new URL('../sprites.css', import.meta.url), css);
 console.log(`sprites.css ${css.length} bytes`);
+
+// ---- app icon: the first worker's head on a dark tile, 16x16 sprite pixels scaled 16x to 256 ----
+const ICON = 256, CELL = ICON / 16;
+const iconRows = person(people.momo, [19, 18], null).slice(0, 16);
+const iconColors = { ...common, ...people.momo, o: OUTLINE };
+const hex = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+const raw = Buffer.alloc(ICON * (ICON * 4 + 1));
+for (let y = 0; y < ICON; y++) {
+  raw[y * (ICON * 4 + 1)] = 0;
+  for (let x = 0; x < ICON; x++) {
+    const key = iconRows[Math.floor(y / CELL)][Math.floor(x / CELL)];
+    const [r, g, b] = hex(key === '.' ? '#242a4a' : iconColors[key]);
+    raw.set([r, g, b, 255], y * (ICON * 4 + 1) + 1 + x * 4);
+  }
+}
+const crcTable = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+const crc = buf => { let c = ~0; for (const b of buf) c = crcTable[(c ^ b) & 255] ^ (c >>> 8); return ~c >>> 0; };
+const chunk = (type, data) => {
+  const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+  const body = Buffer.concat([Buffer.from(type), data]);
+  const sum = Buffer.alloc(4); sum.writeUInt32BE(crc(body));
+  return Buffer.concat([len, body, sum]);
+};
+const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(ICON, 0); ihdr.writeUInt32BE(ICON, 4); ihdr[8] = 8; ihdr[9] = 6;
+writeFileSync(new URL('../build/icon.png', import.meta.url), Buffer.concat([
+  Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0)),
+]));
+console.log('build/icon.png');
