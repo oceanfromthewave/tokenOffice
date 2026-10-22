@@ -1,25 +1,43 @@
 {
   "name": "token-office",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
-  "main": "main.mjs",
-  "description": "Virtual office for watching Claude Code sessions",
+  "main": "out/main/main.js",
+  "description": "A pixel-art office that shows your Claude Code sessions and subagents at work",
   "author": "oceanfromthewave",
   "scripts": {
-    "start": "node server.mjs",
-    "app": "electron .",
-    "dist": "electron-builder"
+    "dev": "vite",
+    "build": "vite build && tsc -p tsconfig.node.json",
+    "typecheck": "tsc -p tsconfig.web.json && tsc -p tsconfig.node.json --noEmit",
+    "test": "node --test \"src/**/*.test.ts\"",
+    "start": "npm run build && node out/server/server.js",
+    "app": "npm run build && electron .",
+    "dist": "npm run typecheck && npm test && npm run build && electron-builder",
+    "icon": "node tools/make-icon.ts"
   },
   "build": {
     "appId": "com.oceanfromthewave.tokenoffice",
     "productName": "tokenOffice",
-    "files": ["main.mjs", "server.mjs", "index.html", "styles.css", "sprites.css", "fonts/Galmuri14.woff2", "app.js", "build/icon.png"],
-    "win": { "target": "nsis", "icon": "build/icon.png" },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+    "files": [
+      "out/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "devDependencies": {
+    "@types/node": "^26.6.5",
     "electron": "^45.0.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5"
   }
 }

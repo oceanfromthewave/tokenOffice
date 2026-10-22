@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#12162a">
+  <title>tokenOffice</title>
+  <link rel="icon" href="/favicon.png">
+  <link rel="stylesheet" href="./styles.css">
+  <script type="module" src="./main.ts"></script>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand"><div class="brand-mark" id="brand-mark"></div><div class="brand-name">token<span>Office</span></div></div>
+      <div class="nav-label">메뉴</div>
+      <a class="nav-item active" href="#office"><span class="nav-icon">▦</span>가상 사무실</a>
+      <a class="nav-item" href="#activity"><span class="nav-icon">◷</span>활동 로그</a>
+      <a class="nav-item" href="#queue"><span class="nav-icon">☷</span>작업 큐</a>
+      <div class="section-row"><span>에이전트</span><span class="count" id="agent-count">0</span></div>
+      <div class="agent-list" id="agent-list"></div>
+      <div class="sidebar-bottom">
+        <div class="usage-card">
+          <div class="usage-head"><span>받은 훅 이벤트</span><strong id="event-count">0</strong></div>
+          <div class="usage-note">프롬프트, 도구 입력, 파일 내용은 받지도 저장하지도 않아요.</div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div class="crumb"><button class="icon-btn mobile-menu" id="menu-button" aria-label="메뉴 열기">☰</button><strong>가상 사무실</strong></div>
+        <div class="top-actions">
+          <div class="live-pill" id="live-pill" title="Claude Code가 훅 이벤트를 보내면 자동으로 실제 모드로 바뀌어요"><i class="live-dot"></i><span id="live-text">데모 모드 · 연결 대기</span></div>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div>
+          <div class="eyebrow" id="current-date"></div>
+          <h1 id="greeting">안녕하세요</h1>
+          <p id="hero-text">지금은 데모 화면이에요. Claude Code 세션을 시작하면 실제 상태로 바뀌어요.</p>
+        </div>
+        <div class="hero-controls"><span class="date-button" id="current-time"></span></div>
+      </section>
+
+      <section class="summary" aria-label="요약">
+        <div class="stat-card"><div class="stat-icon green">▣</div><div class="stat-copy"><span>일하는 에이전트</span><strong id="active-count">0 / 0</strong></div></div>
+        <div class="stat-card"><div class="stat-icon gold">⌘</div><div class="stat-copy"><span>도구 호출</span><strong id="tool-count">0</strong></div></div>
+        <div class="stat-card"><div class="stat-icon blue">✓</div><div class="stat-copy"><span>완료한 응답</span><strong id="turn-count">0</strong></div></div>
+        <div class="stat-card"><div class="stat-icon pink">☺</div><div class="stat-copy"><span>사무실 분위기</span><strong class="mood-label" id="mood">조용함</strong></div></div>
+      </section>
+
+      <section class="office-card" id="office" aria-label="에이전트 가상 사무실">
+        <div class="office-head">
+          <div class="office-title"><h2>오늘의 사무실</h2><span class="subtitle">누르면 지금 하는 일, 두 번 누르면 이름 바꾸기</span></div>
+          <span class="room-badge"><i></i><span id="room-text">출근 준비 중</span></span>
+        </div>
+        <div class="scene" id="scene">
+          <canvas id="office-canvas" role="img" aria-label="에이전트들이 일하는 픽셀 사무실"></canvas>
+          <div class="empty-office" id="empty-office" hidden>Claude Code 세션을 기다리고 있어요</div>
+        </div>
+        <div class="scene-footer"><span>일하면 자리로, 쉬면 휴게실로 가요</span><span><i class="live-dot"></i><span id="sync-text">방금 업데이트</span></span></div>
+      </section>
+
+      <section class="below-grid">
+        <div class="panel" id="activity"><div class="panel-head"><h3>방금 있었던 일</h3></div><div class="activity" id="activity-list"></div></div>
+        <div class="panel" id="queue"><div class="panel-head"><h3>다음 할 일</h3></div><div id="queue-list"></div></div>
+      </section>
+
+      <form class="composer" id="task-form">
+        <span class="composer-mark">&gt;</span>
+        <input id="task-input" type="text" placeholder="쉬고 있는 에이전트에게 맡길 일을 적어보세요 (데모)" autocomplete="off" aria-label="맡길 일">
+        <button class="send-btn" type="submit">맡기기</button>
+      </form>
+    </main>
+  </div>
+  <dialog class="rename-dialog" id="rename-dialog" aria-labelledby="rename-title">
+    <form method="dialog" id="rename-form">
+      <h3 id="rename-title">이름과 캐릭터 바꾸기</h3>
+      <label class="field">이름<input id="rename-input" maxlength="16" autocomplete="off" required></label>
+      <fieldset class="look-picker" id="look-picker"><legend>캐릭터</legend></fieldset>
+      <p class="dialog-note" id="rename-note"></p>
+      <div class="dialog-actions">
+        <button type="button" class="ghost-btn" id="rename-reset">기본값으로</button>
+        <span></span>
+        <button value="cancel" class="ghost-btn" formnovalidate>취소</button>
+        <button value="save" class="send-btn">저장</button>
+      </div>
+    </form>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

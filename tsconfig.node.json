@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "rewriteRelativeImportExtensions": true,
+    "skipLibCheck": true,
+    "rootDir": "src",
+    "outDir": "out"
+  },
+  "include": ["src/main", "src/server", "src/shared"],
+  "exclude": ["src/**/*.test.ts"]
+}
