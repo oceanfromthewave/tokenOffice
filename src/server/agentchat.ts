@@ -1,5 +1,4 @@
 import { execFile as execFileCallback, spawn } from 'node:child_process';
-import { StringDecoder } from 'node:string_decoder';
 import { promisify } from 'node:util';
 
 const execFile = promisify(execFileCallback);
@@ -8,6 +7,19 @@ const OUTPUT_LIMIT = 2_000_000;
 
 interface Target { provider: 'claude' | 'codex'; sessionId: string; cwd?: string }
 interface Executable { command: string; prefix: string[] }
+
+function decodeOutput(chunks: Buffer[]): string {
+  const output = Buffer.concat(chunks);
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(output);
+  } catch {
+    // Some Windows CLI builds write localized text using the active Korean code page.
+    if (process.platform === 'win32') {
+      try { return new TextDecoder('windows-949', { fatal: true }).decode(output); } catch { /* use replacement decoding below */ }
+    }
+    return new TextDecoder('utf-8').decode(output);
+  }
+}
 
 async function executable(name: string): Promise<Executable> {
   if (process.platform !== 'win32') return { command: name, prefix: [] };
@@ -65,29 +77,30 @@ export async function sendToAgent(target: Target, prompt: string, options: { fre
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    let stdout = '';
-    let stderr = '';
+    const stdoutChunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let stdoutSize = 0;
+    let stderrSize = 0;
     let finished = false;
-    const stdoutDecoder = new StringDecoder('utf8');
-    const stderrDecoder = new StringDecoder('utf8');
     const timeout = setTimeout(() => {
       finished = true;
       child.kill();
       reject(new Error('응답이 10분 안에 끝나지 않아 중단했어요.'));
     }, 10 * 60 * 1000);
-    const collect = (current: string, chunk: string) => {
-      const value = current + chunk;
-      if (value.length > OUTPUT_LIMIT) {
+    const collect = (chunks: Buffer[], chunk: Buffer, currentSize: number, updateSize: (size: number) => void) => {
+      const size = currentSize + chunk.length;
+      if (size > OUTPUT_LIMIT) {
         finished = true;
         child.kill();
         clearTimeout(timeout);
         reject(new Error('CLI 응답이 너무 길어 중단했어요.'));
-        return current;
+        return;
       }
-      return value;
+      chunks.push(chunk);
+      updateSize(size);
     };
-    child.stdout.on('data', (chunk: Buffer) => { stdout = collect(stdout, stdoutDecoder.write(chunk)); });
-    child.stderr.on('data', (chunk: Buffer) => { stderr = collect(stderr, stderrDecoder.write(chunk)); });
+    child.stdout.on('data', (chunk: Buffer) => { if (!finished) collect(stdoutChunks, chunk, stdoutSize, size => { stdoutSize = size; }); });
+    child.stderr.on('data', (chunk: Buffer) => { if (!finished) collect(stderrChunks, chunk, stderrSize, size => { stderrSize = size; }); });
     child.once('error', error => {
       if (finished) return;
       finished = true;
@@ -96,15 +109,14 @@ export async function sendToAgent(target: Target, prompt: string, options: { fre
     });
     child.once('close', code => {
       if (finished) return;
-      stdout = collect(stdout, stdoutDecoder.end());
-      stderr = collect(stderr, stderrDecoder.end());
-      if (finished) return;
+      const stdout = decodeOutput(stdoutChunks);
+      const stderr = decodeOutput(stderrChunks);
       finished = true;
       clearTimeout(timeout);
       if (code !== 0) {
-        const detail = String(stderr).trim().slice(-500);
+        const detail = (String(stderr).trim() || String(stdout).trim()).slice(-500);
         if (target.provider === 'codex' && /missing field [`']base_instructions[`']/.test(detail)) {
-          reject(new Error('Codex CLI가 공유 모델 캐시와 호환되지 않아요. Codex CLI를 최신 버전으로 업데이트한 뒤 다시 시도해 주세요.'));
+          reject(new Error('Codex CLI가 공유 모델 캐시와 호환되지 않아요. 터미널에서 npm install -g @openai/codex@latest 를 실행해 CLI를 업데이트한 뒤 다시 시도해 주세요.'));
           return;
         }
         reject(new Error(detail || `${name} CLI가 오류 코드 ${code ?? 'unknown'}로 끝났어요.`));
