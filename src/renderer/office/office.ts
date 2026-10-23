@@ -210,15 +210,23 @@ export class Office {
   // ---------------- the room ----------------
   private paintBackground(g: Ctx) {
     const { viewW, viewH, lx } = this;
-    // wall in three bands, ceiling lights, skirting — across the whole view
+    // wall in three bands, ceiling tiles and lights, chair rail, wainscot, skirting — across the whole view
     rect(g, 0, 0, viewW, 15, '#2b3256'); rect(g, 0, 15, viewW, 15, '#303860'); rect(g, 0, 30, viewW, 12, '#363e68');
-    for (let x = (lx + 24) % 80 - 80; x < viewW; x += 80) rect(g, x, 0, 36, 2, '#f4f6ff');
+    rect(g, 0, 0, viewW, 3, '#1f2547');
+    for (let x = (lx % 16) - 16; x < viewW; x += 16) rect(g, x, 0, 1, 3, '#2b3256');
+    for (let x = (lx + 24) % 80 - 80; x < viewW; x += 80) { rect(g, x, 0, 36, 2, '#f4f6ff'); rect(g, x - 3, 3, 42, 9, '#f4f6ff0d'); } // fluorescent panel and its glow on the wall
+    rect(g, 0, 36, viewW, 1, '#566090'); rect(g, 0, 37, viewW, 5, '#2e3560');
+    for (let x = (lx % 12) - 12; x < viewW; x += 12) rect(g, x, 37, 1, 5, '#262c50');
     rect(g, 0, 42, viewW, 2, '#22284a'); rect(g, 0, FLOOR_Y, viewW, 1, '#566090');
-    // carpet tiles, aligned to the floor plan
-    for (let y = FLOOR_Y + 1; y < viewH; y += 8) for (let x = (lx % 8) - 8; x < viewW; x += 8) {
-      rect(g, x, y, 8, 8, ((x - lx + y + 800) / 8) % 2 < 1 ? '#3a4262' : '#3e4668');
-      rect(g, x, y, 8, 1, '#353d5c');
+    // commercial carpet tiles with seams and flecks, aligned to the floor plan
+    const fleck = (x: number, y: number) => (Math.imul(x + 1000, 73856093) ^ Math.imul(y, 19349663)) >>> 0;
+    for (let y = FLOOR_Y + 1; y < viewH; y += 16) for (let x = (lx % 16) - 16; x < viewW; x += 16) {
+      const alt = (Math.floor((x - lx) / 16) + Math.floor((y - FLOOR_Y - 1) / 16)) & 1;
+      rect(g, x, y, 16, 16, alt ? '#3a4262' : '#3d4566');
+      rect(g, x, y, 16, 1, '#303856'); rect(g, x, y, 1, 16, '#303856');
     }
+    for (let y = FLOOR_Y + 2; y < viewH; y += 2) for (let x = 0; x < viewW; x += 2) if (fleck(x - lx, y) % 9 === 0) rect(g, x, y, 1, 1, '#4a5476');
+    rect(g, 0, FLOOR_Y + 1, viewW, 2, '#00000022'); // wall shadow on the floor
     // more windows where the view runs past the floor plan
     for (let x = lx - 88; x > -86; x -= 88) this.paintWindow(g, x, 8, 82, 28, 11 + x);
     for (let x = lx + 244; x < viewW; x += 88) this.paintWindow(g, x, 8, 82, 28, 13 + x);
@@ -229,6 +237,13 @@ export class Office {
     // a small landscape painting by the lounge
     rect(g, 170, 12, 16, 16, '#8b6a4a'); rect(g, 171, 13, 14, 14, '#9ad0f8'); rect(g, 171, 21, 14, 6, '#4fbf6f');
     rect(g, 174, 19, 5, 2, '#4fbf6f'); rect(g, 180, 15, 3, 3, '#ffd166'); rect(g, 171, 25, 14, 2, '#2f8f52');
+    // wall display with a bar chart, a wall calendar and a fire extinguisher on the right wall
+    rect(g, 254, 8, 34, 22, '#1d2140'); rect(g, 255, 9, 32, 20, '#172a45'); rect(g, 257, 11, 12, 1, '#f4f6ff'); rect(g, 257, 27, 28, 1, '#4a5488');
+    [6, 9, 7, 12, 10, 14].forEach((h, i) => rect(g, 258 + i * 5, 27 - h, 3, h, i % 2 ? '#5fe3d0' : '#ffd166'));
+    rect(g, 255, 30, 32, 1, '#00000033');
+    rect(g, 296, 10, 14, 17, '#8b93b4'); rect(g, 297, 11, 12, 15, '#f4f6ff'); rect(g, 297, 11, 12, 3, '#e25555');
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) rect(g, 298 + c * 3, 16 + r * 3, 2, 2, r === 1 && c === 2 ? '#e25555' : '#bcc3df');
+    rect(g, 240, 29, 4, 2, '#2b2f45'); rect(g, 240, 31, 4, 9, '#e25555'); rect(g, 241, 33, 2, 3, '#f4f6ff');
     // door to the hallway, where new helpers come in, with an exit sign and a doormat
     rect(g, 148, 16, 17, 28, '#2a3160'); rect(g, 150, 18, 13, 26, '#4a5488'); rect(g, 152, 20, 9, 6, '#8fd6e0'); rect(g, 160, 31, 2, 2, '#ffd166');
     rect(g, 151, 14, 11, 2, '#1d4b3a'); rect(g, 152, 14, 9, 1, '#5fe39a');
