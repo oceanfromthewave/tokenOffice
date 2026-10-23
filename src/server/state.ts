@@ -1,4 +1,4 @@
-// Local office state built from Claude Code and Codex hook events. The main-agent roster and recent activity are persisted.
+// Local office state built from Claude Code and Codex hook events. Current sessions and recent activity are persisted.
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { ActivityItem, AgentRecord, ChatMessage, HookEvent, Provider, Snapshot } from '../shared/types.ts';
@@ -28,7 +28,7 @@ export class OfficeState {
 
   constructor(persistencePath?: string) { this.persistencePath = persistencePath; }
 
-  /** Restores the small local roster only. Old agents return as resting; chats and activity stay in memory. */
+  /** Restores activity history only. Agent rows are rebuilt from live CLI sessions and hook events. */
   async restore(now = Date.now()): Promise<void> {
     if (!this.persistencePath) return;
     let saved: unknown;
@@ -41,37 +41,6 @@ export class OfficeState {
     if (!saved || typeof saved !== 'object' || !Array.isArray((saved as { agents?: unknown }).agents)) return;
     const records = (saved as { version?: unknown; agents: unknown[]; activity?: unknown });
     if (records.version !== 1 && records.version !== 2) return;
-    let discarded = false;
-    const candidates = records.agents
-      .filter((value): value is Record<string, unknown> => Boolean(value && typeof value === 'object'))
-      .map(value => ({ value, updatedAt: Number(value.updatedAt) }))
-      .filter(({ value, updatedAt }) => {
-        const valid = (value.provider === 'claude' || value.provider === 'codex')
-          && typeof value.sessionId === 'string' && value.sessionId.length > 0 && value.sessionId.length <= 100
-          && typeof value.project === 'string' && Number.isFinite(updatedAt) && updatedAt <= now;
-        if (!valid || updatedAt < now - SAVED_AGENT_MAX_AGE_MS) discarded = true;
-        return valid && updatedAt >= now - SAVED_AGENT_MAX_AGE_MS;
-      })
-      .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, SAVED_AGENT_LIMIT);
-
-    for (const { value, updatedAt } of candidates) {
-      const provider = value.provider as Provider;
-      const sessionId = value.sessionId as string;
-      const id = `${provider}:${sessionId}:main`;
-      const project = text(value.project, 48) || (provider === 'codex' ? 'Codex' : 'Claude Code');
-      this.agents.set(id, {
-        id, provider, sessionId, agentId: '',
-        name: text(value.name, 48) || project,
-        project,
-        projectParent: text(value.projectParent, 48),
-        projectId: text(value.projectId, 16),
-        agentType: '', state: 'break', tool: '', isSubagent: false, restored: true,
-        startedAt: Number.isFinite(Number(value.startedAt)) ? Number(value.startedAt) : updatedAt,
-        updatedAt,
-      });
-      if (typeof value.cwd === 'string' && value.cwd.length <= 2048) this.projectPaths.set(id, value.cwd);
-    }
     if (Array.isArray(records.activity)) {
       this.activity = records.activity
         .map(value => this.cleanActivity(value, now))
@@ -79,12 +48,10 @@ export class OfficeState {
         .sort((a, b) => b.at - a.at)
         .slice(0, ACTIVITY_LIMIT);
     }
-    if (discarded || records.agents.length > candidates.length) this.schedulePersist();
   }
 
   /** Adds sessions found in the currently-running CLI processes before their next hook event. */
   restoreOpenSessions(sessions: DiscoveredSession[]) {
-    let changed = false;
     for (const session of sessions) {
       const id = `${session.provider}:${session.sessionId}:main`;
       const existing = this.agents.get(id);
@@ -104,14 +71,11 @@ export class OfficeState {
           projectId: session.projectId, agentType: '', state: session.state, tool: '', isSubagent: false,
           restored: true, cliOpen: true, startedAt: session.startedAt, updatedAt: session.updatedAt,
         });
-        changed = true;
       }
-      if (this.projectPaths.get(id) !== session.cwd) {
-        this.projectPaths.set(id, session.cwd);
-        changed = true;
-      }
+      if (this.projectPaths.get(id) !== session.cwd) this.projectPaths.set(id, session.cwd);
     }
-    if (changed) this.schedulePersist();
+    // Replace any legacy roster with the sessions confirmed live at startup.
+    this.schedulePersist();
   }
 
   exportBackup() {
@@ -137,28 +101,17 @@ export class OfficeState {
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, SAVED_AGENT_LIMIT);
 
-    for (const { value, updatedAt } of validAgents) {
+    let matchedLiveAgents = 0;
+    for (const { value } of validAgents) {
       const provider = value.provider as Provider;
       const sessionId = value.sessionId as string;
       const id = `${provider}:${sessionId}:main`;
-      const project = text(value.project, 48) || (provider === 'codex' ? 'Codex' : 'Claude Code');
       const cwd = typeof value.cwd === 'string' && value.cwd.length <= 2048 ? value.cwd : '';
       const existing = this.agents.get(id);
-      if (existing && !existing.restored) {
-        if (cwd && !this.projectPaths.has(id)) this.projectPaths.set(id, cwd);
-        continue;
-      }
-      this.agents.set(id, {
-        id, provider, sessionId, agentId: '',
-        name: text(value.name, 48) || project,
-        project,
-        projectParent: text(value.projectParent, 48),
-        projectId: text(value.projectId, 16),
-        agentType: '', state: 'break', tool: '', isSubagent: false, restored: true,
-        startedAt: Number.isFinite(Number(value.startedAt)) ? Number(value.startedAt) : updatedAt,
-        updatedAt,
-      });
-      if (cwd) this.projectPaths.set(id, cwd);
+      // Backups restore activity, but an inactive saved session must not become an agent.
+      if (!existing) continue;
+      matchedLiveAgents += 1;
+      if (cwd && !this.projectPaths.has(id)) this.projectPaths.set(id, cwd);
     }
     if (Array.isArray(backup.activity)) {
       const imported = backup.activity
@@ -168,7 +121,7 @@ export class OfficeState {
       this.activity = [...merged.values()].sort((a, b) => b.at - a.at).slice(0, ACTIVITY_LIMIT);
     }
     this.schedulePersist();
-    return { agents: validAgents.length, activity: this.activity.length };
+    return { agents: matchedLiveAgents, activity: this.activity.length };
   }
 
   /** Applies one hook event. Returns false when the event is not usable. */
@@ -195,12 +148,9 @@ export class OfficeState {
       for (const [id, agent] of this.agents) {
         if (agent.provider !== provider || agent.sessionId !== sessionId) continue;
         this.log(agent, event, '', now);
-        if (agent.isSubagent) {
-          this.agents.delete(id);
-          this.projectPaths.delete(id);
-        } else {
-          this.agents.set(id, { ...agent, state: 'break', tool: '', restored: false, cliOpen: false, updatedAt: now });
-        }
+        this.agents.delete(id);
+        this.projectPaths.delete(id);
+        this.chats.delete(id);
       }
       this.schedulePersist();
       return true;

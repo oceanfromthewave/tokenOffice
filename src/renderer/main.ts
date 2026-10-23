@@ -500,7 +500,7 @@ function applySnapshot(snapshot: Snapshot) {
   pill.classList.toggle('recent', latestEvent > 0 && Date.now() - latestEvent < 60_000);
   const sourceNames = [...new Set([...snapshot.providers, ...agents.map(agent => agent.provider).filter((value): value is Provider => Boolean(value))])].map(provider => PROVIDER_NAME[provider]).join(' + ') || '연동 도구';
   $('#hero-text').textContent = agents.some(agent => agent.restored)
-    ? `저장되었거나 실행 중인 세션 ${agents.filter(agent => agent.restored).length}개를 찾았어요. 새 훅 이벤트가 오면 상태를 동기화해요.`
+    ? `현재 실행 중인 CLI 세션 ${agents.filter(agent => agent.restored).length}개를 찾았어요. 새 훅 이벤트가 오면 상태를 동기화해요.`
     : agents.length ? `${sourceNames} 세션의 실제 상태를 보여주고 있어요.` : `${sourceNames}의 새 이벤트를 기다리고 있어요. 마지막 이벤트는 ${latestEvent ? ago(latestEvent) : '아직 없어요'}.`;
   render(snapshot.metrics, first);
   renderActivity(snapshot.activity.map((a: ActivityItem) => ({
