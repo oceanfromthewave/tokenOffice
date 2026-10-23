@@ -54,6 +54,7 @@ const ALL_LOOKS: Look[] = [...LOOKS, 'bot'];
 const LOOK_LABEL: Record<Look, string> = {
   momo: '안경 쓴 직원', lumi: '긴 머리 직원', tori: '헤드폰 쓴 직원', koko: '모자 쓴 직원',
   jun: '수염 난 직원', mina: '안경 쓴 긴 머리 직원', yuna: '올림머리 직원', dami: '은발 직원', bot: '로봇',
+  seoa: '분홍 리본 긴 머리 직원', harin: '양 갈래 머리 직원', serin: '꽃 장식 단발 직원',
 };
 function loadProfiles(): Record<string, Profile> {
   try { return JSON.parse(localStorage.getItem(PROFILE_STORE) ?? '{}') as Record<string, Profile>; } catch { return {}; }

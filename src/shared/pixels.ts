@@ -5,7 +5,7 @@ export type Grid = string[][];
 export type Palette = Record<string, string>;
 export interface Sprite { grid: Grid; palette: Palette }
 
-export const LOOKS = ['momo', 'lumi', 'tori', 'koko', 'jun', 'mina', 'yuna', 'dami'] as const;
+export const LOOKS = ['momo', 'lumi', 'tori', 'koko', 'jun', 'mina', 'yuna', 'dami', 'seoa', 'harin', 'serin'] as const;
 export type PersonLook = (typeof LOOKS)[number];
 export type Look = PersonLook | 'bot';
 
@@ -15,7 +15,7 @@ const OUTLINE = '#241c33';
 
 const common: Palette = { k: '#241c33', b: '#f4f6ff', p: '#3b4272', z: '#1d2140', c: '#ff8f9c', q: '#b5524f', a: '#3a4a8a', E: '#2fc9b0' };
 
-interface Person { palette: Palette; style: 'short' | 'long' | 'bun'; acc?: 'glasses' | 'phones' | 'cap' | 'beard' }
+interface Person { palette: Palette; style: 'short' | 'long' | 'bun' | 'twin' | 'bob'; acc?: 'glasses' | 'phones' | 'cap' | 'beard' | 'ribbon' | 'flower' }
 const people: Record<PersonLook, Person> = {
   momo: { palette: { f: '#f1c6a0', g: '#d9a67e', h: '#5a3a24', l: '#7a5233', s: '#6f94ff', t: '#4c6fd6' }, style: 'short', acc: 'glasses' },
   lumi: { palette: { f: '#f6d3b8', g: '#dfb292', h: '#1f1a2e', l: '#3a3250', s: '#ff82a8', t: '#d95f85' }, style: 'long' },
@@ -25,6 +25,9 @@ const people: Record<PersonLook, Person> = {
   mina: { palette: { f: '#f6d3b8', g: '#dfb292', h: '#8a4f2c', l: '#a86a40', s: '#9b8cff', t: '#7766e0' }, style: 'long', acc: 'glasses' },
   yuna: { palette: { f: '#f1c6a0', g: '#d9a67e', h: '#f2d27a', l: '#fff0b0', s: '#4fbf6f', t: '#2f8f52' }, style: 'bun' },
   dami: { palette: { f: '#c98f62', g: '#a8744c', h: '#c9cde0', l: '#eef0f8', s: '#3a4a8a', t: '#2a3670', E: '#ff82a8' }, style: 'short', acc: 'phones' },
+  seoa: { palette: { f: '#f7d5c2', g: '#dfad91', h: '#4b293d', l: '#87506a', s: '#ff9fbd', t: '#df6f96' }, style: 'long', acc: 'ribbon' },
+  harin: { palette: { f: '#f5d2b5', g: '#d8a585', h: '#382747', l: '#76538d', s: '#66cdbf', t: '#399c98' }, style: 'twin', acc: 'ribbon' },
+  serin: { palette: { f: '#f7d8bd', g: '#dfb18e', h: '#a9683e', l: '#e4ad68', s: '#a994ff', t: '#7866d8' }, style: 'bob', acc: 'flower' },
 };
 const botPalette: Palette = { M: '#9aa3c8', N: '#6b7399', S: '#141a38', c: '#5fe3d0', r: '#ff6b6b', d: '#6b7399' };
 
@@ -79,9 +82,14 @@ function personGrid(c: Person, pose: Pose, facing: Facing): Grid {
   const back = facing === 'up';
   if (c.style === 'long') rect(2, 3, 12, back ? 12 : 11, 'h');
   if (c.style === 'bun') rect(6, 0, 4, 2, 'h');
+  if (c.style === 'twin') {
+    rect(1, 1, 3, back ? 12 : 10, 'h'); rect(12, 1, 3, back ? 12 : 10, 'h');
+    px(1, 3, 'l'); px(14, 3, 'l');
+  }
+  if (c.style === 'bob') rect(2, 4, 12, back ? 8 : 9, 'h');
   rect(3, 4, 10, 9, 'f');
-  for (const x of [3, 12]) px(x, 12, c.style === 'long' ? 'h' : '.');
-  if (c.style !== 'long') { px(2, 8, 'f'); px(13, 8, 'f'); }
+  for (const x of [3, 12]) px(x, 12, c.style === 'long' || c.style === 'bob' ? 'h' : '.');
+  if (c.style !== 'long' && c.style !== 'bob') { px(2, 8, 'f'); px(13, 8, 'f'); }
   rect(4, 12, 8, 1, 'g'); px(7, 13, 'g'); px(8, 13, 'g');
   rect(3, 2, 10, 3, 'h'); rect(2, 3, 1, 3, 'h'); rect(13, 3, 1, 3, 'h');
   if (back) {
@@ -95,6 +103,13 @@ function personGrid(c: Person, pose: Pose, facing: Facing): Grid {
       px(7, 8, 'a'); px(8, 8, 'a');
     }
   }
+  if (!back && c.acc === 'ribbon') {
+    px(10, 1, 'c'); px(11, 0, 'c'); px(12, 1, 'q'); px(11, 2, 'q');
+  }
+  if (!back && c.acc === 'flower') {
+    px(11, 2, 'c'); px(12, 1, 'c'); px(13, 2, 'c'); px(12, 3, 'c'); px(12, 2, 'q');
+  }
+  if (c.style === 'bob') { rect(2, 8, 1, 4, 'h'); rect(13, 8, 1, 4, 'h'); }
   if (c.acc === 'phones') { rect(2, 1, 12, 1, 'E'); rect(2, 2, 1, 4, 'E'); rect(13, 2, 1, 4, 'E'); rect(1, 6, 2, 4, 'E'); rect(13, 6, 2, 4, 'E'); }
   if (c.acc === 'cap') { rect(2, 1, 12, 3, 'C'); rect(2, 4, 12, 1, 'D'); }
   if (c.acc === 'beard' && !back) { rect(3, 10, 2, 3, 'h'); rect(11, 10, 2, 3, 'h'); rect(4, 12, 8, 1, 'h'); }
@@ -136,12 +151,16 @@ function personSide(c: Person, pose: Pose): Grid {
   const { px, rect } = painter(g);
   if (c.style === 'long') rect(2, 4, 4, 10, 'h');
   if (c.style === 'bun') rect(2, 1, 3, 3, 'h');
+  if (c.style === 'twin') { rect(1, 2, 3, 9, 'h'); rect(2, 1, 2, 2, 'q'); }
+  if (c.style === 'bob') rect(2, 4, 4, 9, 'h');
   rect(4, 4, 9, 9, 'f'); px(12, 12, '.');
   rect(3, 2, 9, 3, 'h'); rect(3, 4, 3, 6, 'h'); rect(10, 4, 3, 1, 'h'); px(5, 3, 'l'); px(6, 3, 'l');
   px(6, 8, 'g'); px(6, 9, 'g');
   px(10, 8, 'k'); px(10, 9, 'k'); px(13, 9, 'f'); px(9, 10, 'c'); px(11, 11, 'q');
   rect(5, 12, 7, 1, 'g'); px(7, 13, 'g'); px(8, 13, 'g');
   if (c.acc === 'glasses') { rect(9, 7, 3, 1, 'a'); rect(9, 10, 3, 1, 'a'); px(9, 8, 'a'); px(9, 9, 'a'); px(11, 8, 'a'); px(11, 9, 'a'); rect(6, 7, 3, 1, 'a'); }
+  if (c.acc === 'ribbon') { rect(2, 1, 2, 1, 'c'); px(1, 0, 'q'); px(4, 0, 'q'); }
+  if (c.acc === 'flower') { px(3, 2, 'c'); px(4, 1, 'c'); px(5, 2, 'c'); px(4, 3, 'c'); px(4, 2, 'q'); }
   if (c.acc === 'phones') { rect(4, 1, 7, 1, 'E'); rect(5, 6, 3, 4, 'E'); }
   if (c.acc === 'cap') { rect(3, 1, 9, 3, 'C'); rect(10, 4, 4, 1, 'D'); }
   if (c.acc === 'beard') { rect(7, 10, 2, 3, 'h'); rect(9, 12, 4, 1, 'h'); }
