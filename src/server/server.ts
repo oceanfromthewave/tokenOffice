@@ -5,6 +5,7 @@ import { extname, join, normalize, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import type { AgentMeeting, MeetingTurn } from '../shared/types.ts';
 import { sendToAgent } from './agentchat.ts';
+import { cleanMeetingReply } from './meeting-reply.ts';
 import { discoverOpenSessions } from './session-discovery.ts';
 import { connectHooks, disconnectHooks, setupStatus } from './hooksetup.ts';
 import { codexSetupStatus, connectCodexHooks, disconnectCodexHooks } from './codex-hooksetup.ts';
@@ -71,14 +72,17 @@ async function runMeeting(
         .join('\n\n');
       const prompt = [
         `tokenOffice 회의실에서 진행 중인 짧은 회의입니다. 당신은 ${entry.name}이고, 참석자는 ${names}입니다.`,
+        `현재 CLI 작업 폴더: ${entry.target.cwd}`,
         `안건: ${meeting.agenda}`,
         earlier ? `앞선 참석자 발언:\n${earlier}` : '첫 번째 발언자입니다. 안건에 대한 핵심 의견과 확인할 점을 말해 주세요.',
+        '이 회의 실행에서는 도구를 사용할 수 없습니다. 도구 호출이나 XML 호출 문법을 출력하지 마세요. 작업 폴더에서 확인하지 못한 내용은 확인했다고 말하지 말고 추정 또는 미확인이라고 밝혀 주세요.',
         '한국어로 1~3개 짧은 문단으로 답하세요. 앞선 의견을 검토하고, 필요하면 보완하거나 다른 견해를 제시하세요. 마지막에 실행할 다음 단계를 제안하세요.',
       ].join('\n\n');
       try {
         // Each speaker gets only the agenda and earlier replies. Resuming the
         // saved session can collide with a live Codex writer or pull in unrelated history.
-        turn.text = await sendToAgent(entry.target, prompt, { freshSession: true });
+        turn.text = cleanMeetingReply(entry.target.provider, await sendToAgent(entry.target, prompt, { freshSession: true }));
+        if (!turn.text) throw new Error('도구 호출 문법만 반환되어 회의 발언으로 표시할 내용을 받지 못했어요. 다시 시도해 주세요.');
         turn.state = 'complete';
       } catch (error) {
         turn.text = (error as Error).message || 'CLI 응답을 받지 못했어요.';
