@@ -12,6 +12,8 @@ export interface AgentRecord {
   project: string;
   projectParent: string;
   projectId: string;
+  /** Session's active working directory, used to identify its project in the meeting UI. */
+  cwd?: string;
   agentType: string;
   state: AgentState;
   tool: string;
@@ -85,6 +87,7 @@ export interface HookEvent {
   projectParent?: unknown;
   projectId?: unknown;
   cwd?: unknown;
+  tokenOfficeInternalChat?: unknown;
   toolName?: unknown;
   notificationType?: unknown;
 }

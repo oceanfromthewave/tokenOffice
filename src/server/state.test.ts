@@ -15,6 +15,22 @@ test('a tool call puts the session to work and a stop sends it on a break', () =
   assert.equal(office.snapshot(2000).metrics.turns, 1);
 });
 
+test('snapshots expose the active working directory for each session', () => {
+  const office = new OfficeState();
+  office.handle({ event: 'SessionStart', sessionId: 's1', project: 'tokenOffice', cwd: 'C:\\dev\\tokenOffice' }, 1000);
+  assert.equal(office.snapshot(1000).agents[0]?.cwd, 'C:\\dev\\tokenOffice');
+  assert.equal(office.chatTarget('claude:s1:main')?.cwd, 'C:\\dev\\tokenOffice');
+});
+
+test('an app chat SessionEnd does not remove the still-open user session', () => {
+  const office = new OfficeState();
+  office.handle({ event: 'SessionStart', sessionId: 's1', project: 'tokenOffice', cwd: 'C:\\dev\\tokenOffice' }, 1000);
+  office.handle({ event: 'SessionEnd', sessionId: 's1', cwd: 'C:\\dev\\tokenOffice', tokenOfficeInternalChat: true }, 2000);
+  assert.equal(office.snapshot(2000).agents.length, 1);
+  assert.equal(office.chatTarget('claude:s1:main')?.cwd, 'C:\\dev\\tokenOffice');
+  assert.notEqual(office.snapshot(2000).activity[0]?.text, '세션 종료');
+});
+
 test('subagents are separate agents and leave 20s after they finish', () => {
   const office = new OfficeState();
   office.handle({ event: 'SubagentStart', sessionId: 's1', agentId: 'a1', agentType: 'Explore' }, 0);

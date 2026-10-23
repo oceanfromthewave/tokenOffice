@@ -144,6 +144,10 @@ export class OfficeState {
     const cwd = text(data.cwd, 2048);
     if (cwd) this.projectPaths.set(key, cwd);
 
+    // One-shot CLI processes started by tokenOffice can emit SessionEnd for a
+    // resumed live session when only the app's request process has finished.
+    if (event === 'SessionEnd' && data.tokenOfficeInternalChat === true) return true;
+
     if (event === 'SessionEnd' && !agentId) {
       for (const [id, agent] of this.agents) {
         if (agent.provider !== provider || agent.sessionId !== sessionId) continue;
@@ -231,7 +235,9 @@ export class OfficeState {
       connected: this.connected,
       providers: [...this.providers],
       lastSeenAt: { ...this.lastSeenAt },
-      agents: [...this.agents.values()].sort((a, b) => a.startedAt - b.startedAt),
+      agents: [...this.agents.values()]
+        .sort((a, b) => a.startedAt - b.startedAt)
+        .map(agent => ({ ...agent, cwd: this.projectPaths.get(agent.id) })),
       activity: this.activity.slice(0, ACTIVITY_LIMIT),
       metrics: { ...this.metrics },
       updatedAt: now,
@@ -241,7 +247,7 @@ export class OfficeState {
   chatTarget(id: string) {
     const agent = this.agents.get(id);
     if (!agent) return undefined;
-    return { id: agent.id, name: agent.name, provider: agent.provider, sessionId: agent.sessionId, cwd: this.projectPaths.get(id), state: agent.state, isSubagent: agent.isSubagent };
+    return { id: agent.id, name: agent.name, project: agent.project, provider: agent.provider, sessionId: agent.sessionId, cwd: this.projectPaths.get(id), state: agent.state, isSubagent: agent.isSubagent };
   }
 
   chatHistory(agentId: string) {

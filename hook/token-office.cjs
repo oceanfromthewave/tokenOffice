@@ -29,6 +29,7 @@ process.stdin.on('end', async () => {
       projectParent: cwd ? path.basename(path.dirname(cwd)) : '',
       projectId,
       cwd,
+      tokenOfficeInternalChat: process.env.TOKEN_OFFICE_INTERNAL_CHAT === '1',
       toolName: input.tool_name,
       agentId: input.agent_id,
       agentType: input.agent_type,

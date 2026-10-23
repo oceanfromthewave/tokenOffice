@@ -143,12 +143,15 @@ button:focus-visible, input:focus-visible, a:focus-visible, canvas:focus-visible
 .meeting-compose { display: grid; grid-template-columns: minmax(200px, .8fr) minmax(300px, 1.2fr); gap: 18px; align-items: start; }
 .meeting-participants h4, .agent-recent-history h4 { margin: 0 0 8px; font-family: var(--pixel); font-size: 14px; font-weight: 400; }
 .meeting-agent-list { display: flex; flex-wrap: wrap; gap: 7px; }
-.meeting-agent-option { display: flex; align-items: center; gap: 7px; padding: 7px 9px; border: 2px solid var(--line); color: var(--muted); background: var(--bg); cursor: pointer; }
+.meeting-agent-option { display: flex; align-items: flex-start; gap: 7px; max-width: 100%; padding: 7px 9px; border: 2px solid var(--line); color: var(--muted); background: var(--bg); cursor: pointer; }
 .meeting-agent-option:has(input:checked) { border-color: var(--screen); color: var(--text); background: #5fe3d012; }
 .meeting-agent-option:has(input:disabled) { opacity: .55; cursor: not-allowed; }
 .meeting-agent-option input { accent-color: var(--screen); }
-.meeting-agent-option span { display: grid; }
+.meeting-agent-option > span { display: grid; min-width: 0; }
 .meeting-agent-option small { color: var(--muted); font-size: 11px; }
+.meeting-agent-option .meeting-agent-session { color: var(--screen); }
+.meeting-agent-option .meeting-agent-cwd { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meeting-actions span.warning { color: var(--lamp); }
 .meeting-empty { color: var(--muted); font-size: 12.5px; }
 .meeting-form { display: grid; gap: 10px; }
 .meeting-form textarea { resize: vertical; min-height: 68px; padding: 8px 10px; font: inherit; color: var(--text); background: var(--bg); border: 2px solid var(--line); outline: 0; }

@@ -99,9 +99,10 @@ export async function sendToAgent(target: Target, prompt: string, options: { fre
       : ['exec', 'resume', target.sessionId, '-', '--json'];
   if (target.provider === 'codex' && options.freshSession && options.codexModelFallback) args.splice(1, 0, '--model', 'gpt-5.6-terra');
 
-  const env = process.platform === 'win32' && target.provider === 'claude'
+  const cliEnvironment = process.platform === 'win32' && target.provider === 'claude'
     ? claudeEnvironment()
     : process.env;
+  const env = { ...cliEnvironment, TOKEN_OFFICE_INTERNAL_CHAT: '1' };
 
   return await new Promise<string>((resolve, reject) => {
     const child = spawn(cli.command, [...cli.prefix, ...args], {

@@ -1,11 +1,12 @@
 // Dashboard: polls the local hook receiver for Claude Code and Codex sessions.
 import { LOOKS, type Look } from '../shared/pixels.ts';
 import type { ActivityItem, AgentMeeting, AgentRecord, AgentState, ChatMessage, Provider, Snapshot } from '../shared/types.ts';
+import { meetingFoldersDiffer } from '../shared/meeting-folders.ts';
 import { Office, type OfficeAgent } from './office/office.ts';
 import { headUrl, propUrl } from './office/sprites.ts';
 
 /** `key` names whoever this is across sessions (project for a session, type for a subagent) so a rename sticks. */
-interface ViewAgent extends OfficeAgent { role: string; key: string; baseName: string; projectLabel?: string; provider?: Provider; sessionId: string; restored: boolean; cliOpen: boolean; updatedAt: number }
+interface ViewAgent extends OfficeAgent { role: string; key: string; baseName: string; projectLabel?: string; project: string; cwd?: string; provider?: Provider; sessionId: string; restored: boolean; cliOpen: boolean; updatedAt: number }
 interface Stats { tools: number; turns: number; events: number }
 interface ActivityRow {
   agent: string;
@@ -218,7 +219,7 @@ function renderMeetingParticipants() {
   const list = $('#meeting-agent-list');
   const targets = agents.filter(agent => !agent.isSubagent);
   const roomBusy = meetingRecords.some(meeting => meeting.status === 'running');
-  const signature = JSON.stringify([roomBusy, targets.map(agent => [agent.id, agent.name, agent.state, agent.provider, agent.restored, agent.cliOpen, agent.meeting])]);
+  const signature = JSON.stringify([roomBusy, targets.map(agent => [agent.id, agent.name, agent.project, agent.projectLabel, agent.cwd, agent.sessionId, agent.state, agent.provider, agent.restored, agent.cliOpen, agent.meeting])]);
   if (list.dataset.options === signature) { renderMeetingControls(); return; }
   list.dataset.options = signature;
   for (const id of meetingSelection) if (!targets.some(agent => agent.id === id)) meetingSelection.delete(id);
@@ -233,6 +234,7 @@ function renderMeetingParticipants() {
     checkbox.type = 'checkbox';
     checkbox.checked = meetingSelection.has(agent.id);
     checkbox.disabled = roomBusy || agent.state === 'working' || agent.state === 'waiting' || Boolean(agent.meeting);
+    label.title = [agent.project, `CLI: ${agent.provider ? PROVIDER_NAME[agent.provider] : '미확인'}`, `세션 ID: ${agent.sessionId}`, agent.cwd].filter(Boolean).join('\n');
     checkbox.addEventListener('change', () => {
       if (checkbox.checked) meetingSelection.add(agent.id); else meetingSelection.delete(agent.id);
       renderMeetingControls();
@@ -240,6 +242,10 @@ function renderMeetingParticipants() {
     const copy = el('span');
     const status = agent.cliOpen ? 'CLI 실행 중 · 훅 대기' : agent.restored ? '복원됨 · 연결 대기' : agent.meeting ? '회의 중' : `${LABEL[agent.state]} · ${agent.provider ? PROVIDER_NAME[agent.provider] : ''}`;
     copy.append(el('strong', '', agent.name), el('small', '', status));
+    copy.append(el('small', 'meeting-agent-session', `${agent.projectLabel || agent.project || '프로젝트 미확인'} · 세션 ${agent.sessionId.slice(0, 8)}`));
+    const cwd = el('small', 'meeting-agent-cwd', agent.cwd || '작업 폴더 확인 불가');
+    cwd.title = agent.cwd || '세션의 작업 폴더 정보를 아직 받지 못했어요.';
+    copy.append(cwd);
     label.append(checkbox, copy);
     return label;
   }));
@@ -253,12 +259,18 @@ function renderMeetingControls() {
   const invalidCount = selectedAgents.length < 2 || selectedAgents.length > 4;
   const roomBusy = meetingRecords.some(meeting => meeting.status === 'running');
   const busy = selectedAgents.some(agent => agent.state === 'working' || agent.state === 'waiting' || agent.meeting);
-  button.disabled = invalidCount || !agenda || busy || roomBusy;
-  $('#meeting-hint').textContent = roomBusy
+  const missingFolder = selectedAgents.some(agent => !agent.cwd);
+  const differentFolders = meetingFoldersDiffer(selectedAgents);
+  button.disabled = invalidCount || !agenda || busy || roomBusy || missingFolder;
+  const hint = $('#meeting-hint');
+  hint.classList.toggle('warning', differentFolders || missingFolder);
+  hint.textContent = roomBusy
     ? '진행 중인 회의가 끝나면 새 회의를 시작할 수 있어요.'
     : invalidCount
     ? '에이전트를 2~4명 선택해 주세요.'
-    : busy ? '작업 중인 에이전트는 회의에 초대할 수 없어요.'
+      : busy ? '작업 중인 에이전트는 회의에 초대할 수 없어요.'
+      : missingFolder ? '참석자의 작업 폴더를 확인하지 못했어요. 해당 CLI 세션을 다시 시작해 주세요.'
+      : differentFolders ? '선택한 세션의 작업 폴더가 달라요. 회의 시작 전에 폴더를 확인해 주세요.'
       : !agenda ? '회의 안건을 입력해 주세요.'
         : `참석자 ${selectedAgents.length}명 · 각 CLI 세션에 순서대로 의견을 요청해요.`;
 }
@@ -429,6 +441,8 @@ function fromRecords(records: AgentRecord[], labels: Map<string, string>): ViewA
       key,
       baseName: generated,
       projectLabel,
+      project: r.project,
+      cwd: r.cwd,
       name: count > 1 ? `${name} ${count}` : name,
       look: profile.look ?? (r.isSubagent ? 'bot' : defaultLook(key)),
       state: r.state,
@@ -671,6 +685,15 @@ $('#meeting-form').addEventListener('submit', async event => {
   const selectedAgents = agents.filter(agent => meetingSelection.has(agent.id));
   const agenda = $<HTMLTextAreaElement>('#meeting-agenda').value.trim();
   if (selectedAgents.length < 2 || selectedAgents.length > 4 || !agenda) return;
+  if (selectedAgents.some(agent => !agent.cwd)) {
+    toast('참석자의 작업 폴더를 확인하지 못했어요. 해당 CLI 세션을 다시 시작해 주세요.');
+    return;
+  }
+  if (meetingFoldersDiffer(selectedAgents)) {
+    const sessions = selectedAgents.map(agent => `${agent.name} · ${agent.projectLabel || agent.project} · ${agent.cwd}`).join('\n');
+    const confirmed = window.confirm(`참석자들의 작업 폴더가 서로 달라요. 각자 다른 프로젝트 파일을 기준으로 답할 수 있습니다.\n\n${sessions}\n\n이대로 회의를 시작할까요?`);
+    if (!confirmed) return;
+  }
   const button = $<HTMLButtonElement>('#meeting-start');
   button.disabled = true;
   button.textContent = '회의를 준비해요';
