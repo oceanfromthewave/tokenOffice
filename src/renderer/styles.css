@@ -149,8 +149,7 @@ button:focus-visible, input:focus-visible, a:focus-visible, canvas:focus-visible
 .meeting-agent-option input { accent-color: var(--screen); }
 .meeting-agent-option > span { display: grid; min-width: 0; }
 .meeting-agent-option small { color: var(--muted); font-size: 11px; }
-.meeting-agent-option .meeting-agent-session { color: var(--screen); }
-.meeting-agent-option .meeting-agent-cwd { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meeting-agent-option .meeting-agent-project { color: var(--screen); }
 .meeting-actions span.warning { color: var(--lamp); }
 .meeting-empty { color: var(--muted); font-size: 12.5px; }
 .meeting-form { display: grid; gap: 10px; }

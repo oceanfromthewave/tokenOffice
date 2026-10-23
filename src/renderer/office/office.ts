@@ -3,6 +3,7 @@
 // and behind furniture correctly. People walk A* routes on a 2px grid and never cut through furniture.
 import { iconForTool, shirtColor, type Pose, type PropName } from '../../shared/pixels.ts';
 import { Crowd, type OfficeAgent, type Walker } from './crowd.ts';
+import { clockAngles } from './clock.ts';
 import { DESKS, DOOR, FLOOR_Y, LOUNGE, SOFA, VENDING_SPOT, WORLD_H, WORLD_W } from './layout.ts';
 import { iconCanvas, propCanvas, workerCanvas } from './sprites.ts';
 
@@ -129,6 +130,7 @@ export class Office {
     const ctx = this.ctx;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(this.world, 0, 0, this.viewW * this.scale, this.viewH * this.scale);
+    this.drawClockHands(ctx);
     this.drawLabels(ctx);
   }
 
@@ -279,14 +281,42 @@ export class Office {
   }
 
   private drawClock(g: Ctx) {
-    rect(g, 150, 3, 13, 11, '#8b93b4'); rect(g, 151, 4, 11, 9, '#f4f6ff');
-    const now = new Date();
-    const hand = (angle: number, length: number) => {
-      for (let i = 1; i <= length; i++) rect(g, Math.round(156 + Math.sin(angle) * i), Math.round(8 - Math.cos(angle) * i), 1, 1, '#1c2140');
+    // Rounded pixel-art clock face fits above the door sign (x151–161, y3–13).
+    rect(g, 154, 3, 5, 1, '#8b93b4');
+    rect(g, 152, 4, 9, 1, '#8b93b4');
+    rect(g, 151, 5, 11, 7, '#8b93b4');
+    rect(g, 152, 12, 9, 1, '#8b93b4');
+    rect(g, 154, 13, 5, 1, '#8b93b4');
+    rect(g, 154, 4, 5, 1, '#f4f6ff');
+    rect(g, 153, 5, 7, 1, '#f4f6ff');
+    rect(g, 152, 6, 9, 5, '#f4f6ff');
+    rect(g, 153, 11, 7, 1, '#f4f6ff');
+    rect(g, 154, 12, 5, 1, '#f4f6ff');
+    // Cardinal marks remain crisp while the hands are drawn smoothly at screen resolution.
+    rect(g, 156, 5, 1, 1, '#69749d'); rect(g, 159, 8, 1, 1, '#69749d');
+    rect(g, 156, 10, 1, 1, '#69749d'); rect(g, 153, 8, 1, 1, '#69749d');
+  }
+
+  private drawClockHands(ctx: Ctx) {
+    const { hour, minute, second } = clockAngles(new Date());
+    const centerX = (this.lx + 156.5) * this.scale;
+    const centerY = 8.5 * this.scale;
+    const hand = (angle: number, length: number, width: number, color: string) => {
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(centerX + Math.sin(angle) * length * this.scale, centerY - Math.cos(angle) * length * this.scale);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(1, width * this.scale);
+      ctx.lineCap = 'round';
+      ctx.stroke();
     };
-    hand(((now.getHours() % 12) + now.getMinutes() / 60) * (Math.PI / 6), 2);
-    hand(now.getMinutes() * (Math.PI / 30), 4);
-    rect(g, 156, 8, 1, 1, '#ff6b6b');
+    hand(hour, 2.2, 1.35, '#272d4e');
+    hand(minute, 3.7, 0.9, '#5d6791');
+    hand(second, 4.2, 0.6, '#e25555');
+    ctx.fillStyle = '#e25555';
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, Math.max(1, this.scale * 0.7), 0, Math.PI * 2);
+    ctx.fill();
   }
 
   private buildFurniture(): Drawable[] {

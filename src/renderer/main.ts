@@ -234,7 +234,7 @@ function renderMeetingParticipants() {
     checkbox.type = 'checkbox';
     checkbox.checked = meetingSelection.has(agent.id);
     checkbox.disabled = roomBusy || agent.state === 'working' || agent.state === 'waiting' || Boolean(agent.meeting);
-    label.title = [agent.project, `CLI: ${agent.provider ? PROVIDER_NAME[agent.provider] : '미확인'}`, `세션 ID: ${agent.sessionId}`, agent.cwd].filter(Boolean).join('\n');
+    label.title = [agent.projectLabel || agent.project || '프로젝트 미확인', `CLI: ${agent.provider ? PROVIDER_NAME[agent.provider] : '미확인'}`].join('\n');
     checkbox.addEventListener('change', () => {
       if (checkbox.checked) meetingSelection.add(agent.id); else meetingSelection.delete(agent.id);
       renderMeetingControls();
@@ -242,10 +242,7 @@ function renderMeetingParticipants() {
     const copy = el('span');
     const status = agent.cliOpen ? 'CLI 실행 중 · 훅 대기' : agent.restored ? '복원됨 · 연결 대기' : agent.meeting ? '회의 중' : `${LABEL[agent.state]} · ${agent.provider ? PROVIDER_NAME[agent.provider] : ''}`;
     copy.append(el('strong', '', agent.name), el('small', '', status));
-    copy.append(el('small', 'meeting-agent-session', `${agent.projectLabel || agent.project || '프로젝트 미확인'} · 세션 ${agent.sessionId.slice(0, 8)}`));
-    const cwd = el('small', 'meeting-agent-cwd', agent.cwd || '작업 폴더 확인 불가');
-    cwd.title = agent.cwd || '세션의 작업 폴더 정보를 아직 받지 못했어요.';
-    copy.append(cwd);
+    copy.append(el('small', 'meeting-agent-project', agent.projectLabel || agent.project || '프로젝트 미확인'));
     label.append(checkbox, copy);
     return label;
   }));
@@ -690,7 +687,7 @@ $('#meeting-form').addEventListener('submit', async event => {
     return;
   }
   if (meetingFoldersDiffer(selectedAgents)) {
-    const sessions = selectedAgents.map(agent => `${agent.name} · ${agent.projectLabel || agent.project} · ${agent.cwd}`).join('\n');
+    const sessions = selectedAgents.map(agent => `${agent.name} · ${agent.projectLabel || agent.project}`).join('\n');
     const confirmed = window.confirm(`참석자들의 작업 폴더가 서로 달라요. 각자 다른 프로젝트 파일을 기준으로 답할 수 있습니다.\n\n${sessions}\n\n이대로 회의를 시작할까요?`);
     if (!confirmed) return;
   }

@@ -13,6 +13,14 @@ export function claudeMeetingArgs(): string[] {
   return ['--print', '--no-session-persistence', '--input-format', 'text', '--output-format', 'text', '--tools', 'Glob,Grep,Read,LS', '--strict-mcp-config'];
 }
 
+export function claudeChatArgs(sessionId: string): string[] {
+  return ['--print', '--permission-mode', 'acceptEdits', '--resume', sessionId, '--input-format', 'text', '--output-format', 'text'];
+}
+
+export function codexChatArgs(sessionId: string, cwd: string): string[] {
+  return ['exec', '--sandbox', 'workspace-write', '--cd', cwd, 'resume', sessionId, '-', '--json'];
+}
+
 function decodeOutput(chunks: Buffer[]): string {
   const output = Buffer.concat(chunks);
   try {
@@ -93,10 +101,10 @@ export async function sendToAgent(target: Target, prompt: string, options: { fre
   const args = target.provider === 'claude'
     ? options.freshSession
       ? claudeMeetingArgs()
-      : ['--print', '--resume', target.sessionId, '--input-format', 'text', '--output-format', 'text']
+      : claudeChatArgs(target.sessionId)
     : options.freshSession
       ? ['exec', '--ephemeral', '--sandbox', 'read-only', '--json', '-']
-      : ['exec', 'resume', target.sessionId, '-', '--json'];
+      : codexChatArgs(target.sessionId, target.cwd);
   if (target.provider === 'codex' && options.freshSession && options.codexModelFallback) args.splice(1, 0, '--model', 'gpt-5.6-terra');
 
   const cliEnvironment = process.platform === 'win32' && target.provider === 'claude'
