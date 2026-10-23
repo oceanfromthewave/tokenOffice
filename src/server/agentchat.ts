@@ -9,6 +9,10 @@ const OUTPUT_LIMIT = 2_000_000;
 interface Target { provider: 'claude' | 'codex'; sessionId: string; cwd?: string }
 interface Executable { command: string; prefix: string[] }
 
+export function claudeMeetingArgs(): string[] {
+  return ['--print', '--no-session-persistence', '--input-format', 'text', '--output-format', 'text', '--tools', 'Glob,Grep,Read,LS', '--strict-mcp-config'];
+}
+
 function decodeOutput(chunks: Buffer[]): string {
   const output = Buffer.concat(chunks);
   try {
@@ -88,7 +92,7 @@ export async function sendToAgent(target: Target, prompt: string, options: { fre
   const cli = await executable(name);
   const args = target.provider === 'claude'
     ? options.freshSession
-      ? ['--print', '--no-session-persistence', '--input-format', 'text', '--output-format', 'text', '--tools', '', '--strict-mcp-config']
+      ? claudeMeetingArgs()
       : ['--print', '--resume', target.sessionId, '--input-format', 'text', '--output-format', 'text']
     : options.freshSession
       ? ['exec', '--ephemeral', '--sandbox', 'read-only', '--json', '-']
