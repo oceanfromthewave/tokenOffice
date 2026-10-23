@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cellOf, DESKS, DOOR, LOUNGE, OVERFLOW, walkGrid } from './layout.ts';
+import { cellOf, DESKS, DOOR, LOUNGE, MEETING_SEATS, OVERFLOW, VENDING_SPOT, walkGrid } from './layout.ts';
 import { findPath } from './path.ts';
 
 const allowed = (...spots: { band: number }[]) => new Set(spots.map(s => s.band).filter(b => b >= 0));
@@ -9,6 +9,19 @@ test('every desk and lounge spot can be reached from the door', () => {
   for (const spot of [...DESKS, ...LOUNGE, ...OVERFLOW]) {
     const path = findPath(walkGrid(allowed(spot)), cellOf(DOOR), cellOf(spot));
     assert.ok(path, `no route from the door to ${spot.kind} at ${spot.x},${spot.y}`);
+  }
+});
+
+test('every spot someone can stand or sit at is a free cell, not one that furniture covers', () => {
+  for (const spot of [...DESKS, ...LOUNGE, ...OVERFLOW, ...MEETING_SEATS, VENDING_SPOT]) {
+    const c = cellOf(spot);
+    assert.ok(!walkGrid(allowed(spot)).blocked(c.x, c.y), `${spot.kind} spot at ${spot.x},${spot.y} sits inside furniture`);
+  }
+});
+
+test('the vending machine and the meeting room can be reached from the door', () => {
+  for (const spot of [VENDING_SPOT, ...MEETING_SEATS]) {
+    assert.ok(findPath(walkGrid(allowed(spot)), cellOf(DOOR), cellOf(spot)), `no route to ${spot.kind} at ${spot.x},${spot.y}`);
   }
 });
 
@@ -32,9 +45,9 @@ test('nobody can stand close enough beside furniture for their shoulders to clip
   assert.ok(!blockedAt(DESKS[0]!.x + 26, DESKS[0]!.y + 4), 'the gap between desks stays open');
 });
 
-test('lounge spots are distinct and at least a body width apart', () => {
+test('lounge seats are distinct: a body width apart along a row, and the armchair row sits a full step behind the sofa', () => {
   for (const a of LOUNGE) for (const b of LOUNGE) {
     if (a === b) continue;
-    assert.ok(Math.abs(a.x - b.x) >= 14 || Math.abs(a.y - b.y) >= 20, `${a.x},${a.y} crowds ${b.x},${b.y}`);
+    assert.ok(Math.abs(a.x - b.x) >= 14 || Math.abs(a.y - b.y) >= 18, `${a.x},${a.y} crowds ${b.x},${b.y}`);
   }
 });

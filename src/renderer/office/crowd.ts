@@ -119,6 +119,11 @@ export class Crowd {
       w.agent = agent;
     }
     this.startNextVendingVisit();
+    this.reroute(instant);
+  }
+
+  /** Sends everyone whose goal changed (or who is idle somewhere other than their goal) to where they should be. */
+  private reroute(instant: boolean) {
     for (const w of this.walkers.values()) {
       if (w.leaving) continue;
       const goal = this.goalFor(w);
@@ -133,12 +138,13 @@ export class Crowd {
   }
 
   update(dt: number) {
+    let stageChanged = false; // someone finished at the vending machine, so goals changed without any new agent data
     for (const w of this.walkers.values()) {
       w.t += dt;
       if (w.restStage === 'vending' && w.at === VENDING_SPOT && !w.route.length) {
         if (w.vendingTimer <= 0) w.vendingTimer = 1.8;
         w.vendingTimer -= dt;
-        if (w.vendingTimer <= 0) { w.vendingTimer = 0; w.restStage = 'lounge'; }
+        if (w.vendingTimer <= 0) { w.vendingTimer = 0; w.restStage = 'lounge'; stageChanged = true; }
       }
       if (w.route.length && w.waited < MAX_WAIT && this.blockedAhead(w)) { w.waited += dt; continue; }
       if (!this.blockedAhead(w)) w.waited = 0;
@@ -156,7 +162,8 @@ export class Crowd {
         }
       }
     }
-    this.startNextVendingVisit();
+    if (this.startNextVendingVisit()) stageChanged = true;
+    if (stageChanged) this.reroute(false);
   }
 
   vendingInUse() {
@@ -167,10 +174,14 @@ export class Crowd {
     return !agent.meeting && (agent.state === 'break' || (!agent.isSubagent && agent.state === 'done'));
   }
 
-  private startNextVendingVisit() {
-    if ([...this.walkers.values()].some(w => !w.leaving && w.restStage === 'vending')) return;
+  /** Lets the next person in the queue go to the vending machine, one at a time. True if someone started. */
+  private startNextVendingVisit(): boolean {
+    if ([...this.walkers.values()].some(w => !w.leaving && w.restStage === 'vending')) return false;
     const next = [...this.walkers.values()].find(w => !w.leaving && this.isResting(w.agent) && w.restStage === 'queue');
-    if (next) { next.restStage = 'vending'; next.vendingTimer = 0; }
+    if (!next) return false;
+    next.restStage = 'vending';
+    next.vendingTimer = 0;
+    return true;
   }
 
   private goalFor(w: Walker): Spot | null {

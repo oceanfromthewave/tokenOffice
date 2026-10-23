@@ -17,7 +17,7 @@ export const SOFA_BAND = 100;
 export const LOUNGE_BAND = 101;
 export const MEETING_BAND = 102;
 export const DOOR: Point = { x: 157, y: 49 };
-export const VENDING_SPOT: Spot = { x: 210, y: 84, kind: 'stand', band: -1 };
+export const VENDING_SPOT: Spot = { x: 210, y: 83, kind: 'stand', band: -1 };
 
 /** Seat positions are where a seated worker's feet are. Three columns, two rows. */
 export const DESKS: Spot[] = [70, 114].flatMap((y, row) => [32, 84, 136].map((x, col) => ({ x, y, kind: 'desk' as const, band: row * 3 + col })));
